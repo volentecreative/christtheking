@@ -1,0 +1,42 @@
+# Podcast -> Webflow sync. A GOOD fit for GitHub Actions: Apple, Spotify and
+# Webflow are all plain API calls, no bot detection, seconds per run.
+name: Podcast sync
+
+on:
+  schedule:
+    - cron: '0 15 * * *' # daily, 10am CT (15:00 UTC during CDT)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only - write nothing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: podcast-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run tests
+        run: node --test test/*.test.js
+      - name: Sync
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        run: node sync-podcast.js ${{ inputs.dry_run && '--dry-run' || '' }} --report podcast-report.csv --verbose
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: podcast-report
+          path: podcast-report.csv
+          if-no-files-found: ignore

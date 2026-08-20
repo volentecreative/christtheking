@@ -1,0 +1,18 @@
+{
+  "_comment": "YouTube video IDs the sync should never create in Webflow. Deleting an item in the Designer is NOT enough — the video is still on the channel, so the next run would recreate it. List it here instead. Removing an ID from this list makes the next run re-add the video, so this is reversible.",
+
+  "ignore": [
+    {
+      "id": "bezHcAlVmtw",
+      "why": "Duplicate re-upload of 'Andy Naselli - God's Good Design for Men and Women: Part 2 of 4'. Keeping 1ig8k7SEHn0 (2025-04-30), which owns the clean slug."
+    },
+    {
+      "id": "GEkFNEXwu9Y",
+      "why": "Duplicate re-upload of 'There Arose a Reasoning Among Them'. Keeping kYhlo-emQ1Y (2025-08-27), which owns the clean slug."
+    },
+    {
+      "id": "LIjjXEUCljQ",
+      "why": "Duplicate re-upload of 'Two Reasons a Woman Must Learn Quietly and Submissively (1 Timothy 2:13-14)'. Keeping 1WFRRnom6LM, which owns the clean slug."
+    }
+  ]
+}

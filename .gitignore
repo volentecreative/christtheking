@@ -1,0 +1,17 @@
+# Secrets — never commit these
+credentials.json
+client_secret_*.json
+*.token.json
+.env
+.env.*
+
+# Runtime junk
+node_modules/
+*.vtt
+podcast-report.csv
+.DS_Store
+
+# Credential backups and local scratch
+credentials.json.bak
+credentials.json.*.bak
+_to_delete/

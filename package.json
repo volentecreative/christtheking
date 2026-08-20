@@ -1,0 +1,17 @@
+{
+  "name": "ctk-youtube-webflow-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Syncs Christ the King YouTube uploads into the Webflow Media collection.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "sync": "node sync-youtube.js",
+    "dry-run": "node sync-youtube.js --dry-run",
+    "test": "node --test test/*.test.js",
+    "podcast": "node sync-podcast.js",
+    "podcast:dry": "node sync-podcast.js --dry-run --report podcast-report.csv"
+  }
+}

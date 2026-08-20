@@ -1,0 +1,47 @@
+# YouTube -> Webflow sync. MANUAL ONLY - deliberately no schedule.
+#
+# YouTube throttles and blocks GitHub-hosted runner IPs. Evidence from this
+# project: on a residential IP an unauthenticated run degraded from 44s to 240s+
+# per video, then failed 79 videos in a row. A shared cloud IP is worse, and the
+# fix that worked locally (browser cookies) does not transfer - cookies expire
+# in days and a login session does not belong in CI secrets.
+#
+# For unattended YouTube syncing use a Mac: a launchd job, or a self-hosted
+# runner registered to this repo.
+name: YouTube sync (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only - write nothing'
+        type: boolean
+        default: true
+      max_work:
+        description: 'Max videos to fetch this run'
+        default: '15'
+
+concurrency:
+  group: youtube-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install yt-dlp
+        run: |
+          sudo curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+          yt-dlp --version
+      - name: Run tests
+        run: node --test test/*.test.js
+      - name: Sync
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+        run: node sync-youtube.js ${{ inputs.dry_run && '--dry-run' || '' }} --max-work ${{ inputs.max_work }} --concurrency 2 --verbose
