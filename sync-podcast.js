@@ -53,7 +53,7 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const options = { dryRun: false, force: false, speakers: true, report: null, verbose: false };
+  const options = { dryRun: false, force: false, speakers: true, report: null, verbose: false, strict: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--dry-run': options.dryRun = true; break;
@@ -61,6 +61,7 @@ function parseArgs(argv) {
       case '--no-speakers': options.speakers = false; break;
       case '--report': options.report = argv[++i]; break;
       case '--verbose': case '-v': options.verbose = true; break;
+      case '--strict': options.strict = true; break;
       case '--help': case '-h': options.help = true; break;
       default:
         if (argv[i].startsWith('-')) fail(`Unknown flag: ${argv[i]}`);
@@ -328,7 +329,10 @@ async function main() {
   }
 
   if (unmatchedItems.length) {
-    log.info(`\n${unmatchedItems.length} media item(s) with no podcast episode:`);
+    log.info(
+      `\n${unmatchedItems.length} media item(s) with no podcast episode ` +
+        `(expected for video-only content — not an error):`
+    );
     for (const item of unmatchedItems.slice(0, 10)) log.info(`  ${item.title}`);
     if (unmatchedItems.length > 10) log.info(`  …and ${unmatchedItems.length - 10} more`);
   }
@@ -343,7 +347,19 @@ async function main() {
       `${summary.failed.length} failed${options.dryRun ? ' (dry run)' : ''}\n`
   );
 
-  return summary.failed.length || unmatchedItems.length ? 1 : 0;
+  // Exit 1 ONLY for a real failure — a write that errored.
+  //
+  // Unmatched items are NOT failures. CTK has 7 permanently: video-only content
+  // (the Conference promo) and podcast-only episodes with no video. That count
+  // is steady state, so treating it as failure made every scheduled run report
+  // red — which trains you to ignore the one run that genuinely breaks.
+  //
+  // Pass --strict when you DO want unmatched or ambiguous pairings to fail.
+  if (options.strict && (unmatchedItems.length || ambiguous.length)) {
+    log.warn('--strict: unmatched or ambiguous pairings present, exiting non-zero');
+    return 1;
+  }
+  return summary.failed.length ? 1 : 0;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
