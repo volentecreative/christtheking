@@ -245,7 +245,53 @@ videos and finishes in well under a minute.
 
 ---
 
-## Running it on a schedule (GitHub Actions)
+## Automation (GitHub Actions)
+
+Two workflows live in `.github/workflows/`:
+
+| Workflow | Trigger | Why |
+|---|---|---|
+| `podcast-sync.yml` | **daily, 10am CT** + manual | Apple/Spotify/Webflow are plain API calls. Runs in seconds, nothing to throttle. |
+| `youtube-sync.yml` | **manual only** | YouTube blocks GitHub runner IPs. No schedule on purpose. |
+
+### Repository secrets
+
+Settings -> Secrets and variables -> Actions:
+
+| Secret | Where it comes from |
+|---|---|
+| `WEBFLOW_API_TOKEN` | `webflowToken` in `credentials.json` |
+| `SPOTIFY_CLIENT_ID` | `podcast.spotifyClientId` |
+| `SPOTIFY_CLIENT_SECRET` | `podcast.spotifyClientSecret` |
+
+With `gh` installed you can set all three without the values ever hitting your
+clipboard or scrollback:
+
+```bash
+python3 -c "import json;print(json.load(open('credentials.json'))['webflowToken'])" | gh secret set WEBFLOW_API_TOKEN
+python3 -c "import json;print(json.load(open('credentials.json'))['podcast']['spotifyClientId'])" | gh secret set SPOTIFY_CLIENT_ID
+python3 -c "import json;print(json.load(open('credentials.json'))['podcast']['spotifyClientSecret'])" | gh secret set SPOTIFY_CLIENT_SECRET
+```
+
+Env vars beat `credentials.json`, which is gitignored and never leaves your Mac.
+
+### Why YouTube is not scheduled
+
+From this project's own runs: on a residential IP, an unauthenticated pass
+degraded from 44s to 240s+ per video and then failed 79 in a row. Browser
+cookies fixed it locally (12-18s per video, zero failures) but that fix does not
+transfer to CI — cookies expire within days, and a login session should not sit
+in repo secrets. A shared GitHub runner IP is a worse starting point than yours.
+
+For unattended YouTube syncing, run it on a Mac: a `launchd` job, or a
+self-hosted runner registered to this repo. The manual workflow is there for the
+occasional dispatch and may simply fail; that is expected, not a regression.
+
+---
+
+## Running the YouTube sync on a schedule, locally
+
+
 
 `.github/workflows/sync.yml.example` is a working starting point. Add
 `WEBFLOW_API_TOKEN` as a repository secret and rename the file to drop
