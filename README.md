@@ -109,6 +109,42 @@ date, duration, transcript) only.
 Webflow, not the YouTube title. If you renamed something in the Designer, the
 sync keeps your name — run with `--verbose` to see the YouTube title alongside it.
 
+### Title normalization
+
+YouTube titles arrive in four or five different house styles. `normalizeTitle()`
+in `lib/parse.js` reduces them to one, and `buildFieldData` runs every new item
+through it:
+
+| Off the title | Why |
+| --- | --- |
+| `Andy Naselli - ` prefix | the speaker is its own CMS field, shown under the title |
+| `\| 1 Timothy - Part 19` suffix | the series is its own field, shown in the meta line and the breadcrumb |
+| `Exhortation - ` / `Sermon - ` label | that's the Type field |
+| a trailing `(1 Timothy 3:1)` | that's Scripture Raw, shown on the item page |
+| a trailing period | titles aren't sentences |
+
+Everything left is title-cased, with articles, coordinating conjunctions and
+prepositions of three letters or fewer lowercased mid-title. Words the author
+already shaped are left alone: ALL-CAPS (`LORD`, `ESV`), internal capitals
+(`McCheyne`), and anything containing a digit.
+
+Two deliberate refusals:
+
+- **A reference only comes off the end, and only with a digit after the book
+  name.** "God Loved the World: 11 Questions About John 3:16" keeps its
+  reference — stripping it would leave "11 Questions About" dangling — and
+  "(John Piper)" is a name, not the gospel of John.
+- **A part marker inside the reference parentheses survives.**
+  `What Must Deacons Be? (1 Timothy 3:8-13, Part 2 of 2)` becomes
+  `What Must Deacons Be? (Part 2 of 2)`, because part 1 and part 2 are otherwise
+  indistinguishable in a list.
+
+`scripture-raw` is parsed from the **raw** title, before normalization, so the
+reference is captured on its way out.
+
+`name` is fill-only (see above), so this only shapes items on first sync — it
+never rewrites a title you or the worship guides have already corrected.
+
 ### Sermon vs. Exhortation
 
 The 900-second cutoff was calibrated against the 25 items already in the
@@ -116,6 +152,13 @@ collection: exhortations run 157–338s, sermons 1417–3458s. The gap is wide, 
 the split is unambiguous — but it's still a guess about length, not content.
 Change `sermonMinSeconds` in `credentials.json` if that ever drifts, and fix
 individual mistakes in the Designer — the sync won't overwrite you.
+
+### The breadcrumb's series link
+
+The series half of the breadcrumb works the same way but lives on the **Media
+Series** collection, in a **Filter URL** field, one row per series. It filters
+on the series *slug* (`/media?series_equal=1-timothy`) precisely because slugs
+never contain spaces. A new series needs that field filled in by hand.
 
 ---
 
@@ -245,53 +288,7 @@ videos and finishes in well under a minute.
 
 ---
 
-## Automation (GitHub Actions)
-
-Two workflows live in `.github/workflows/`:
-
-| Workflow | Trigger | Why |
-|---|---|---|
-| `podcast-sync.yml` | **daily, 10am CT** + manual | Apple/Spotify/Webflow are plain API calls. Runs in seconds, nothing to throttle. |
-| `youtube-sync.yml` | **manual only** | YouTube blocks GitHub runner IPs. No schedule on purpose. |
-
-### Repository secrets
-
-Settings -> Secrets and variables -> Actions:
-
-| Secret | Where it comes from |
-|---|---|
-| `WEBFLOW_API_TOKEN` | `webflowToken` in `credentials.json` |
-| `SPOTIFY_CLIENT_ID` | `podcast.spotifyClientId` |
-| `SPOTIFY_CLIENT_SECRET` | `podcast.spotifyClientSecret` |
-
-With `gh` installed you can set all three without the values ever hitting your
-clipboard or scrollback:
-
-```bash
-python3 -c "import json;print(json.load(open('credentials.json'))['webflowToken'])" | gh secret set WEBFLOW_API_TOKEN
-python3 -c "import json;print(json.load(open('credentials.json'))['podcast']['spotifyClientId'])" | gh secret set SPOTIFY_CLIENT_ID
-python3 -c "import json;print(json.load(open('credentials.json'))['podcast']['spotifyClientSecret'])" | gh secret set SPOTIFY_CLIENT_SECRET
-```
-
-Env vars beat `credentials.json`, which is gitignored and never leaves your Mac.
-
-### Why YouTube is not scheduled
-
-From this project's own runs: on a residential IP, an unauthenticated pass
-degraded from 44s to 240s+ per video and then failed 79 in a row. Browser
-cookies fixed it locally (12-18s per video, zero failures) but that fix does not
-transfer to CI — cookies expire within days, and a login session should not sit
-in repo secrets. A shared GitHub runner IP is a worse starting point than yours.
-
-For unattended YouTube syncing, run it on a Mac: a `launchd` job, or a
-self-hosted runner registered to this repo. The manual workflow is there for the
-occasional dispatch and may simply fail; that is expected, not a regression.
-
----
-
-## Running the YouTube sync on a schedule, locally
-
-
+## Running it on a schedule (GitHub Actions)
 
 `.github/workflows/sync.yml.example` is a working starting point. Add
 `WEBFLOW_API_TOKEN` as a repository secret and rename the file to drop

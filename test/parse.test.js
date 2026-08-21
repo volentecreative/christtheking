@@ -11,6 +11,7 @@ import {
   matchSeries,
   matchSpeakers,
   needsWork,
+  normalizeTitle,
   parseIgnoreList,
   parseScripture,
   parseVtt,
@@ -345,7 +346,7 @@ test('adding a missing speaker to the collection backfills it on the next run', 
   assert.deepEqual(patch['speaker-s'], ['sp-piper']);
 });
 
-test('force refreshes YouTube-owned fields but still spares type/speaker/series', () => {
+test('force refreshes YouTube-owned fields but spares type/speaker/series/name', () => {
   const existing = {
     name: 'Old Title',
     transcript: '<p>old</p>',
@@ -357,7 +358,9 @@ test('force refreshes YouTube-owned fields but still spares type/speaker/series'
 
   const { patch, changedFields } = buildUpdatePatch(desired, existing, { force: true });
 
-  assert.equal(patch.name, 'Corrected Title');
+  // `name` used to be refreshed here. It no longer is: titles are curated from
+  // the worship service guides, so YouTube must not win them back.
+  assert.equal(patch.name, undefined);
   assert.equal(patch.transcript, '<p>fresh transcript</p>');
   assert.equal(patch.thumbnail, 'https://img/new.jpg');
   assert.equal(patch.type, undefined);
@@ -470,4 +473,114 @@ test('parseIgnoreList is safe on empty, missing, or malformed input', () => {
   assert.equal(parseIgnoreList({}).size, 0);
   assert.equal(parseIgnoreList({ ignore: [] }).size, 0);
   assert.equal(parseIgnoreList({ ignore: [{ why: 'no id here' }, null] }).size, 0);
+});
+
+
+
+
+
+
+test('guide-sourced fields survive a --force run', () => {
+  // date, name and scripture-raw come from the worship service guides. A forced
+  // re-sync refreshes YouTube metadata but must not touch these.
+  const desired = {
+    name: 'Andy Naselli - Some Youtube Title',
+    date: '2026-08-12T18:00:00.000Z',
+    'scripture-raw': 'Nehemiah 8',
+    description: '<p>fresh</p>',
+  };
+  const existing = {
+    name: 'From Confusion to Obedience',
+    date: '2026-08-09T15:30:00.000Z',
+    'scripture-raw': 'Nehemiah 8:9-18',
+    description: '<p>old</p>',
+  };
+  const { patch } = buildUpdatePatch(desired, existing, { force: true });
+  assert.equal(patch.name, undefined);
+  assert.equal(patch.date, undefined);
+  assert.equal(patch['scripture-raw'], undefined);
+  assert.equal(patch.description, '<p>fresh</p>', 'non-guide fields still refresh');
+});
+
+test('guide-sourced fields still fill when the item has none', () => {
+  const desired = { name: 'A Title', date: '2026-08-12T18:00:00.000Z', 'scripture-raw': 'Psalm 1' };
+  const { patch } = buildUpdatePatch(desired, {});
+  assert.equal(patch.name, 'A Title');
+  assert.equal(patch.date, '2026-08-12T18:00:00.000Z');
+  assert.equal(patch['scripture-raw'], 'Psalm 1');
+});
+
+
+test('normalizeTitle strips the speaker prefix, series suffix and lead label', () => {
+  const speakers = [{ name: 'Andy Naselli' }, { name: 'Nathan Colestock' }];
+  assert.equal(
+    normalizeTitle('Andy Naselli - What Shepherds Do | 1 Timothy - Part 19', speakers),
+    'What Shepherds Do'
+  );
+  assert.equal(normalizeTitle('Exhortation - fret not, sing psalms.', speakers), 'Fret Not, Sing Psalms');
+});
+
+test('normalizeTitle only strips a prefix that is a real speaker', () => {
+  const speakers = [{ name: 'Andy Naselli' }];
+  assert.equal(
+    normalizeTitle('Fear to Faith - Faith to Favor', speakers),
+    'Fear to Faith - Faith to Favor'
+  );
+});
+
+test('normalizeTitle pulls a trailing scripture reference out of the title', () => {
+  assert.equal(normalizeTitle('Make War, Not Peace (Ezra 9-10)'), 'Make War, Not Peace');
+  assert.equal(
+    normalizeTitle('How Can I Start Building and Fighting? (Nehemiah 1:1-2:8)'),
+    'How Can I Start Building and Fighting?'
+  );
+  assert.equal(normalizeTitle('Win the World Through the Word (Ezra 7\u20138)'), 'Win the World Through the Word');
+});
+
+test('normalizeTitle keeps a part marker that shared the reference parentheses', () => {
+  assert.equal(
+    normalizeTitle('What Must Deacons Be? (1 Timothy 3:8-13, Part 2 of 2)'),
+    'What Must Deacons Be? (Part 2 of 2)'
+  );
+});
+
+test('normalizeTitle leaves a reference that is part of the sentence', () => {
+  // Stripping this one would leave "11 Questions About" dangling.
+  assert.equal(
+    normalizeTitle('God Loved the World: 11 Questions About John 3:16'),
+    'God Loved the World: 11 Questions About John 3:16'
+  );
+  // A digit must follow the book name, so a parenthetical name survives.
+  assert.equal(normalizeTitle('Preaching Christ (John Piper)'), 'Preaching Christ (John Piper)');
+});
+
+test('normalizeTitle title-cases without flattening author-shaped words', () => {
+  assert.equal(normalizeTitle('the LORD is my shepherd (Psalm 23)'), 'The LORD Is My Shepherd');
+  assert.equal(normalizeTitle('robert murray mccheyne on prayer'), 'Robert Murray Mccheyne on Prayer');
+  assert.equal(normalizeTitle('a word to the church'), 'A Word to the Church');
+});
+
+test('normalizeTitle drops a trailing period but keeps an ellipsis', () => {
+  assert.equal(normalizeTitle('Be on the Beauty Hunt.'), 'Be on the Beauty Hunt');
+  // Only a title long enough to have been cut off keeps a lowercase last word;
+  // in a short title the final word is capitalized as usual.
+  const truncated =
+    'Three Ways the Church Guards the Good Deposit, Two Kinds of Elders, and Two Types of Deacons and Two Types of\u2026';
+  assert.equal(normalizeTitle(truncated), truncated);
+  assert.equal(normalizeTitle('And Two Types of'), 'And Two Types Of');
+});
+
+test('buildFieldData normalizes the name but reads scripture from the raw title', () => {
+  const data = buildFieldData(
+    {
+      id: 'abcdefghijk',
+      title: 'Andy Naselli - what shepherds do (1 Timothy 3:1) | 1 Timothy - Part 19',
+      duration: 2400,
+      description: '',
+      upload_date: '20250810',
+    },
+    { transcriptHtml: '', speakers: [{ id: 's1', name: 'Andy Naselli' }], series: [], now: 'now' }
+  );
+  assert.equal(data.name, 'What Shepherds Do');
+  assert.equal(data['scripture-raw'], '1 Timothy 3:1');
 });
