@@ -273,7 +273,21 @@ async function main() {
 
     for (const [field, value] of Object.entries(wanted)) {
       if (!value) continue;
-      if (isEmpty(data[field]) || (options.force && data[field] !== value)) patch[field] = value;
+      const current = data[field];
+      // A stored Apple URL with no `i` param is a casualty of the old
+      // query-stripping bug — it points at the show, not the episode. Treat it
+      // as empty so an ordinary run repairs it without needing --force.
+      // Stale Apple URLs come in two shapes: the old query-stripped ones that
+      // land on the show page, and the short `/podcast/id<show>?i=<ep>` form,
+      // which works but loses the episode slug. Both get upgraded to Apple's
+      // canonical URL without needing --force.
+      const staleApple =
+        field === 'apple-podcasts-episode-url' &&
+        current &&
+        (!/[?&]i=/.test(String(current)) || /\/podcast\/id\d+\?/.test(String(current)));
+      if (isEmpty(current) || staleApple || (options.force && current !== value)) {
+        patch[field] = value;
+      }
     }
 
     // Speaker: fill only when blank, never overwrite a human's choice.

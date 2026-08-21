@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  appleEpisodeUrl,
   daysApart,
   findSpeaker,
   matchEpisodes,
@@ -229,8 +230,8 @@ test('parseAppleEpisodes reads the real lookup shape and drops the show row', ()
   assert.equal(episodes[0].durationSeconds, 324);
   assert.equal(
     episodes[0].appleUrl,
-    'https://podcasts.apple.com/us/podcast/exhortation-redeem-the-time/id1792025763',
-    'tracking query string stripped'
+    'https://podcasts.apple.com/us/podcast/exhortation-redeem-the-time/id1792025763?i=1000782957478',
+    '`i` is the episode — only `uo` is tracking'
   );
   assert.ok(episodes[0].audioUrl.startsWith('https://t.subsplash.com/'));
 });
@@ -308,4 +309,43 @@ test('the Clinton/Clint variant flows through to the podcast title split', () =>
   ]);
   assert.equal(speaker, 'Clint Manley', 'returns the name as spelled in the collection');
   assert.equal(title, 'Be on the Beauty Hunt');
+});
+
+test('appleEpisodeUrl keeps the episode id — the path id is only the show', () => {
+  const raw =
+    'https://podcasts.apple.com/us/podcast/nathan-colestock-from-confusion/id1792025763?i=1000123456789&uo=4';
+  // Dropping `i` leaves a URL that still *looks* episode-specific but lands on
+  // the show's front page. That was the bug.
+  assert.equal(
+    appleEpisodeUrl(raw),
+    'https://podcasts.apple.com/us/podcast/nathan-colestock-from-confusion/id1792025763?i=1000123456789'
+  );
+});
+
+test('appleEpisodeUrl drops Apple analytics params but survives odd input', () => {
+  assert.equal(
+    appleEpisodeUrl('https://podcasts.apple.com/us/podcast/x/id1?uo=4'),
+    'https://podcasts.apple.com/us/podcast/x/id1'
+  );
+  assert.equal(appleEpisodeUrl(''), null);
+  assert.equal(appleEpisodeUrl(null), null);
+  assert.equal(appleEpisodeUrl('not a url'), null);
+});
+
+test('parseAppleEpisodes carries the episode id through', () => {
+  const parsed = parseAppleEpisodes({
+    results: [
+      {
+        wrapperType: 'podcastEpisode',
+        episodeGuid: 'g1',
+        trackName: 'A Sermon',
+        releaseDate: '2026-08-12T00:00:00Z',
+        trackTimeMillis: 1_800_000,
+        trackViewUrl: 'https://podcasts.apple.com/us/podcast/a-sermon/id1792025763?i=1000999888777&uo=4',
+        episodeUrl: 'https://cdn.example.com/a.mp3',
+      },
+    ],
+  });
+  assert.equal(parsed.length, 1);
+  assert.match(parsed[0].appleUrl, /\?i=1000999888777$/);
 });
