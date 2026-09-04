@@ -29,11 +29,13 @@
  * throttle you into timeouts:  export YTDLP_COOKIES_FROM_BROWSER=chrome
  *
  * When YouTube refuses to describe a video — a bot check on the IP, or a
- * throttle — a video that is missing from Webflow is still created from the
- * channel listing (title, duration, and what those imply) plus the upload date
- * from the channel's Atom feed, with the fields only the full fetch knows left
- * blank for a later run to fill. See buildPlaceholderFieldData in lib/parse.js
- * and lib/feed.js.
+ * throttle — three sources that don't need the blocked endpoint still do most
+ * of the work: the channel listing (title, duration, and what those imply), the
+ * channel's Atom feed (upload date) and the i.ytimg.com CDN (thumbnail). A video
+ * missing from Webflow is created from them; one already there has its BLANKS
+ * filled, never its hand-corrected fields. Only description and transcript truly
+ * need the full fetch. See buildPlaceholderFieldData in lib/parse.js,
+ * lib/feed.js and lib/thumbnail.js.
  *
  * Exit codes: 0 = clean, 1 = a Webflow write failed, 2 = fatal config error.
  * A video YouTube would not hand over is deferred work, not a failed run.
@@ -55,7 +57,8 @@ import {
   slugify,
   uniqueSlug,
 } from './lib/parse.js';
-import { fetchChannelFeedDates } from './lib/feed.js';
+import { fetchChannelFeed } from './lib/feed.js';
+import { resolveThumbnailUrl } from './lib/thumbnail.js';
 import { WebflowClient } from './lib/webflow.js';
 import { fetchVideoBundle, listChannelVideos, ytdlpVersion } from './lib/ytdlp.js';
 
@@ -457,6 +460,7 @@ async function main() {
     created: [],
     partial: 0,
     partialDated: 0,
+    partialFilled: 0,
     updated: [],
     unchanged: alreadyComplete,
     skipped: 0,
@@ -509,27 +513,60 @@ async function main() {
     );
   }
 
-  // Upload dates for the partial path. What YouTube blocks is the per-video
-  // player endpoint; the channel's Atom feed is plain XML on another path and
-  // normally still answers, so an item created from the listing can carry its
-  // real date instead of none. Read only when a partial item is actually on the
-  // cards, and never fatal — no feed just means no date, which is recoverable.
-  let feedDates = new Map();
-  const partialsPossible =
-    options.partial &&
-    !options.since &&
-    fetchResults.some(
-      (result, i) => result.error && !toFetch[i].existing && toFetch[i].candidate.fromListing
-    );
-
-  if (partialsPossible) {
-    try {
-      feedDates = await fetchChannelFeedDates(channelId);
-      log.step(`channel feed: upload dates for ${feedDates.size} recent video(s)`);
-    } catch (error) {
-      log.warn(`channel feed unreadable, partial items will have no date: ${error.message}`);
+  async function writeUpdate(existing, patch) {
+    if (options.dryRun) return;
+    if (existing.isDraft) {
+      await webflow.updateDraftItem(config.mediaCollectionId, existing.id, patch);
+    } else {
+      await webflow.updateLiveItem(config.mediaCollectionId, existing.id, patch);
     }
   }
+
+  // Everything the partial path can act on this run: a video YouTube refused to
+  // describe, that the channel listing did describe. Both the ones missing from
+  // Webflow (created below) and the ones already there with blanks (filled in).
+  const partialJobs =
+    options.partial && !options.since
+      ? fetchResults
+          .map((result, i) => (result.error && toFetch[i].candidate.fromListing ? toFetch[i] : null))
+          .filter(Boolean)
+      : [];
+
+  // Neither of these needs the endpoint YouTube blocks. The Atom feed is plain
+  // XML on another path; thumbnails are fixed URLs on an image CDN. Read only
+  // when the partial path can use them, and never fatal — a missing value just
+  // leaves a blank field, which the next full fetch fills.
+  let feed = new Map();
+  const thumbnails = new Map();
+
+  if (partialJobs.length) {
+    try {
+      feed = await fetchChannelFeed(channelId);
+      log.step(`channel feed: ${feed.size} recent video(s)`);
+    } catch (error) {
+      log.warn(`channel feed unreadable, partial items lose their date: ${error.message}`);
+    }
+
+    const probed = await mapWithConcurrency(partialJobs, 5, (job) =>
+      resolveThumbnailUrl(job.candidate.id)
+    );
+    probed.forEach((result, i) => {
+      const id = partialJobs[i].candidate.id;
+      const url = result.value || (feed.get(id) || {}).thumbnail || null;
+      if (url) thumbnails.set(id, url);
+    });
+    log.step(`thumbnails: resolved ${thumbnails.size}/${partialJobs.length}`);
+  }
+
+  const partialFieldData = (candidate) =>
+    buildPlaceholderFieldData(
+      {
+        ...candidate,
+        publishedAt: (feed.get(candidate.id) || {}).publishedAt || null,
+        thumbnailUrl: thumbnails.get(candidate.id) || null,
+      },
+      { speakers, series, sermonMinSeconds: config.sermonMinSeconds, now }
+    );
 
   log.info('');
 
@@ -551,27 +588,43 @@ async function main() {
         );
       }
 
-      // YouTube wouldn't describe this video, but the channel listing already
-      // did — title and duration, which is enough for a real item. Create it now
-      // rather than leaving the video off the site until YouTube relents; the
-      // fields only the full fetch knows stay blank, and because a partial item
-      // gets no `last-synced`, needsWork() keeps re-fetching it until they fill.
+      // YouTube wouldn't describe this video, but plenty is still knowable
+      // without it: the channel listing has the title and duration, the Atom
+      // feed has the upload date, and the image CDN has the thumbnail. So a
+      // video missing from Webflow is created, and one already there has its
+      // BLANKS filled — buildUpdatePatch only ever writes into empty fields, so
+      // a title, date or speaker corrected by hand is never touched.
       //
-      // Three cases can't take this path: an item that already exists (there is
-      // nothing to create), --video (no listing data, so no title or duration),
-      // and --since (the cutoff is a date, and a date is exactly what we lack).
-      const canStandIn =
-        options.partial && !job.existing && job.candidate.fromListing && !options.since;
-      if (!canStandIn) continue;
+      // Two cases can't take this path: --video (no listing data, so no title or
+      // duration) and --since (the cutoff is a date, and a date is exactly what
+      // is missing here).
+      if (!partialJobs.includes(job)) continue;
 
       try {
-        const desired = buildPlaceholderFieldData(
-          { ...job.candidate, publishedAt: feedDates.get(job.candidate.id) || null },
-          { speakers, series, sermonMinSeconds: config.sermonMinSeconds, now }
-        );
-        await createItem(desired, { partial: true });
-        summary.partial++;
-        if (desired.date) summary.partialDated++;
+        const desired = partialFieldData(job.candidate);
+
+        if (job.existing) {
+          const { patch, changed, changedFields } = buildUpdatePatch(
+            desired,
+            job.existing.fieldData
+          );
+          // The item is still not fully synced — description and transcript need
+          // the fetch that just failed. Leaving `last-synced` off keeps
+          // needsWork() returning true, so the next run tries again.
+          delete patch['last-synced'];
+          if (!changed) continue;
+
+          await writeUpdate(job.existing, patch);
+          summary.updated.push({ title: job.existing.fieldData.name, fields: changedFields });
+          summary.partialFilled++;
+          log.step(
+            `~ ${job.existing.fieldData.name || desired.name} → ${changedFields.join(', ')} (partial)`
+          );
+        } else {
+          await createItem(desired, { partial: true });
+          summary.partial++;
+          if (desired.date) summary.partialDated++;
+        }
       } catch (error) {
         summary.writeFailed.push({
           id: job.candidate.id,
@@ -614,13 +667,7 @@ async function main() {
           continue;
         }
 
-        if (!options.dryRun) {
-          if (existing.isDraft) {
-            await webflow.updateDraftItem(config.mediaCollectionId, existing.id, patch);
-          } else {
-            await webflow.updateLiveItem(config.mediaCollectionId, existing.id, patch);
-          }
-        }
+        await writeUpdate(existing, patch);
 
         // Log the name as it stands in Webflow, not the YouTube title — otherwise a
         // hand-corrected (or mis-imported) item looks like it's being renamed.
@@ -686,19 +733,30 @@ async function main() {
       log.info(`  …and ${summary.fetchFailed.length - 10} more`);
     }
 
-    if (summary.partial) {
-      const dates = summary.partialDated
-        ? `${summary.partialDated} of them also carry their real upload date, read from the channel feed.`
-        : 'No upload date was available for any of them, so that field is blank too.';
+    if (summary.partial || summary.partialFilled) {
+      const lines = [];
 
-      log.info(
-        `\n${summary.partial} of them were still created from the channel listing, with the ` +
-          'title,\nduration and type YouTube gave up front.\n' +
-          `\n${dates}\n` +
-          '\nThumbnail, description and transcript are blank, and because a partial item\n' +
-          'carries no `last-synced`, the next run that gets through fills them in — no\n' +
-          '--force needed.\n'
+      if (summary.partial) {
+        lines.push(
+          `${summary.partial} of them were still created from the channel listing — title,`,
+          `duration and type — of which ${summary.partialDated} carry their real upload date from the`,
+          'channel feed.'
+        );
+      }
+      if (summary.partialFilled) {
+        lines.push(
+          `${summary.partialFilled} item(s) already in Webflow had blanks filled from the same`,
+          'sources. Only empty fields were written, so anything corrected by hand is',
+          'untouched.'
+        );
+      }
+      lines.push(
+        'Description and transcript still need the fetch that failed, and because',
+        'these items carry no `last-synced`, the next run that gets through fills',
+        'them in — no --force needed.'
       );
+
+      log.info(`\n${lines.join('\n')}\n`);
     }
 
     if (botGated > 3) {

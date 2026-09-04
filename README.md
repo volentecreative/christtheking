@@ -104,18 +104,29 @@ that listing alone:
 
 | Written without the full fetch | Left blank until a full fetch |
 |---|---|
-| `name`, `slug`, `youtube-video-id`, `video-url` | `thumbnail` |
-| `duration-seconds`, `type` | `description` |
-| `scripture-raw`, `speaker-s`, `series` | `transcript` |
+| `name`, `slug`, `youtube-video-id`, `video-url` | `description` |
+| `duration-seconds`, `type` | `transcript` |
+| `scripture-raw`, `speaker-s`, `series` | |
 | `date` — from the channel's Atom feed | |
+| `thumbnail` — from the image CDN | |
 
-The date comes from `https://www.youtube.com/feeds/videos.xml?channel_id=…`, read
-by `lib/feed.js`. That feed is plain XML on a different path from the player
-endpoint YouTube gates, needs no key or session, and carries an **exact**
-`<published>` stamp — the same moment the full fetch would have recorded. It
-covers only the ~15 newest uploads, which is exactly the set a blocked run is
-usually trying to create; anything older keeps a blank date. If the feed itself
-can't be read, the run says so and carries on without dates.
+Only the description and the transcript genuinely need the blocked call. Two
+other sources fill the rest, and neither touches the player endpoint YouTube
+gates:
+
+- **`date`** — `https://www.youtube.com/feeds/videos.xml?channel_id=…`, read by
+  `lib/feed.js`. Plain XML on a different path, no key or session, carrying an
+  **exact** `<published>` stamp: the same moment the full fetch would record. It
+  covers only the ~15 newest uploads, which is the set a blocked run is usually
+  working on; anything older keeps a blank date.
+- **`thumbnail`** — `https://i.ytimg.com/vi/<id>/<quality>.jpg`, read by
+  `lib/thumbnail.js`. A plain image CDN with no bot gate. Qualities are *probed*
+  best-first (`maxresdefault` → `sddefault` → `hqdefault`) rather than assumed,
+  since which files exist depends on the source upload, so a probed URL is
+  normally the exact file the full fetch would have picked.
+
+Either source failing is a warning, not an error — the field stays blank and the
+next run fills it.
 
 Nothing is guessed. `date` and `name` are fill-only, so a value written here is
 permanent — which is why the date must be the feed's exact stamp and never the
@@ -129,10 +140,21 @@ video until YouTube answers, and the blank fields then fill through the ordinary
 fill-only path. No `--force` needed, and a title you fixed
 in the Designer meanwhile is still safe.
 
-Partial items only happen for videos **missing from Webflow**. `--no-partial`
-turns them off; `--strict` makes any unfetched video exit non-zero. Neither
-`--video ID` (no listing data) nor `--since` (the cutoff is a date, which is
-exactly what a partial item lacks) will create one.
+### Filling in items that already exist
+
+The same sources also top up an item that is **already in Webflow** when its
+fetch fails — the case where the sync landed a video, you corrected the title,
+date and speaker in the Designer, and the thumbnail was still blank.
+
+This goes through the ordinary `buildUpdatePatch`, so it only ever writes into
+**empty** fields. A title you rewrote, a date you took off the worship guide, a
+speaker you assigned: none of it is touched. The patch also deliberately omits
+`last-synced`, so the item stays eligible for the full fetch that will bring the
+description and transcript.
+
+`--no-partial` turns all of this off; `--strict` makes any unfetched video exit
+non-zero. Neither `--video ID` (no listing data) nor `--since` (the cutoff is a
+date, which is exactly what is missing here) takes the partial path at all.
 
 This is what makes the GitHub Actions run useful despite the block: it lands the
 videos, and a later run from a Mac fills in the rest.

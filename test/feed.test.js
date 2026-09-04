@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { fetchChannelFeedDates, parseFeedDates } from '../lib/feed.js';
+import { fetchChannelFeed, parseFeed } from '../lib/feed.js';
 
 const FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom">
@@ -18,6 +18,9 @@ const FEED = `<?xml version="1.0" encoding="UTF-8"?>
     <title>Main Session 1 - Dating | Doug Wilson</title>
     <published>2026-08-30T14:05:00+00:00</published>
     <updated>2026-09-02T11:00:00+00:00</updated>
+    <media:group>
+      <media:thumbnail url="https://i.ytimg.com/vi/Nj13WqtGjq0/hqdefault.jpg" width="480" height="360"/>
+    </media:group>
   </entry>
   <entry>
     <id>yt:video:XhDY8Bs-bwk</id>
@@ -28,44 +31,54 @@ const FEED = `<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>`;
 
-test('parseFeedDates pulls an exact timestamp per video', () => {
-  const dates = parseFeedDates(FEED);
+test('parseFeed pulls an exact timestamp per video', () => {
+  const entries = parseFeed(FEED);
 
-  assert.equal(dates.size, 2);
-  assert.equal(dates.get('Nj13WqtGjq0'), '2026-08-30T14:05:00.000Z');
-  assert.equal(dates.get('XhDY8Bs-bwk'), '2026-09-01T18:30:00.000Z');
+  assert.equal(entries.size, 2);
+  assert.equal(entries.get('Nj13WqtGjq0').publishedAt, '2026-08-30T14:05:00.000Z');
+  assert.equal(entries.get('XhDY8Bs-bwk').publishedAt, '2026-09-01T18:30:00.000Z');
 });
 
-test('parseFeedDates reads published, never updated', () => {
+test('parseFeed reads published, never updated', () => {
   // The first entry was edited three days after upload. Taking `updated` would
   // silently redate the sermon.
-  assert.equal(parseFeedDates(FEED).get('Nj13WqtGjq0'), '2026-08-30T14:05:00.000Z');
+  assert.equal(parseFeed(FEED).get('Nj13WqtGjq0').publishedAt, '2026-08-30T14:05:00.000Z');
 });
 
-test('parseFeedDates ignores junk rather than throwing', () => {
-  assert.equal(parseFeedDates('').size, 0);
-  assert.equal(parseFeedDates(null).size, 0);
-  assert.equal(parseFeedDates('<html>404</html>').size, 0);
+test('parseFeed picks up the thumbnail YouTube advertises', () => {
+  const entries = parseFeed(FEED);
+
   assert.equal(
-    parseFeedDates('<feed><entry><yt:videoId>a</yt:videoId></entry></feed>').size,
-    0,
-    'an entry with no <published> is skipped, not stored as an invalid date'
+    entries.get('Nj13WqtGjq0').thumbnail,
+    'https://i.ytimg.com/vi/Nj13WqtGjq0/hqdefault.jpg'
+  );
+  assert.equal(entries.get('XhDY8Bs-bwk').thumbnail, null, 'absent is null, not undefined');
+});
+
+test('parseFeed ignores junk rather than throwing', () => {
+  assert.equal(parseFeed('').size, 0);
+  assert.equal(parseFeed(null).size, 0);
+  assert.equal(parseFeed('<html>404</html>').size, 0);
+  assert.equal(
+    parseFeed('<feed><entry><yt:videoId>a</yt:videoId></entry></feed>').get('a').publishedAt,
+    null,
+    'an entry with no <published> yields a null date, never an invalid one'
   );
   assert.equal(
-    parseFeedDates(
+    parseFeed(
       '<feed><entry><yt:videoId>a</yt:videoId><published>whenever</published></entry></feed>'
-    ).size,
-    0,
-    'an unparseable date is skipped'
+    ).get('a').publishedAt,
+    null,
+    'an unparseable date is dropped'
   );
 });
 
-test('fetchChannelFeedDates skips the request without a channel id', async () => {
-  const dates = await fetchChannelFeedDates(null);
-  assert.equal(dates.size, 0);
+test('fetchChannelFeed skips the request without a channel id', async () => {
+  const entries = await fetchChannelFeed(null);
+  assert.equal(entries.size, 0);
 });
 
-test('fetchChannelFeedDates requests the feed by channel id', async () => {
+test('fetchChannelFeed requests the feed by channel id', async () => {
   const original = globalThis.fetch;
   let requested = null;
   globalThis.fetch = async (url) => {
@@ -74,23 +87,23 @@ test('fetchChannelFeedDates requests the feed by channel id', async () => {
   };
 
   try {
-    const dates = await fetchChannelFeedDates('UCabcdefghijklmnopqrstuv');
+    const entries = await fetchChannelFeed('UCabcdefghijklmnopqrstuv');
     assert.equal(
       requested,
       'https://www.youtube.com/feeds/videos.xml?channel_id=UCabcdefghijklmnopqrstuv'
     );
-    assert.equal(dates.size, 2);
+    assert.equal(entries.size, 2);
   } finally {
     globalThis.fetch = original;
   }
 });
 
-test('fetchChannelFeedDates throws on a bad response, for the caller to absorb', async () => {
+test('fetchChannelFeed throws on a bad response, for the caller to absorb', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response('nope', { status: 429 });
 
   try {
-    await assert.rejects(() => fetchChannelFeedDates('UCabcdefghijklmnopqrstuv'), /429/);
+    await assert.rejects(() => fetchChannelFeed('UCabcdefghijklmnopqrstuv'), /429/);
   } finally {
     globalThis.fetch = original;
   }

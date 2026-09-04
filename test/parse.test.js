@@ -333,6 +333,20 @@ test('buildPlaceholderFieldData leaves what only a full fetch knows empty', () =
   assert.equal(data.date, null);
 });
 
+test('buildPlaceholderFieldData takes a resolved thumbnail', () => {
+  const data = buildPlaceholderFieldData(
+    {
+      id: 'abc',
+      title: 'Run to Win',
+      duration: 1200,
+      thumbnailUrl: 'https://i.ytimg.com/vi/abc/maxresdefault.jpg',
+    },
+    LISTING_CONTEXT
+  );
+
+  assert.equal(data.thumbnail, 'https://i.ytimg.com/vi/abc/maxresdefault.jpg');
+});
+
 test('buildPlaceholderFieldData takes the upload date from the channel feed', () => {
   const data = buildPlaceholderFieldData(
     {
