@@ -6,8 +6,15 @@
 # fix that worked locally (browser cookies) does not transfer - cookies expire
 # in days and a login session does not belong in CI secrets.
 #
-# For unattended YouTube syncing use a Mac: a launchd job, or a self-hosted
-# runner registered to this repo.
+# Expect the per-video fetch to be refused here ("Sign in to confirm you're not
+# a bot"). That is NOT a broken run and no longer fails the job: the channel
+# listing still answers, so a video missing from Webflow is created from it with
+# the title, duration and type, and the fields only a full fetch knows are left
+# blank for a later run to fill. See "When YouTube won't answer" in the README.
+#
+# So this workflow is the way to get new sermons onto the site quickly. To fill
+# in thumbnails, dates, descriptions and transcripts, re-run the sync from a
+# Mac: a launchd job, or a self-hosted runner registered to this repo.
 name: YouTube sync (manual)
 
 on:

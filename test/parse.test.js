@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildFieldData,
+  buildPlaceholderFieldData,
   buildUpdatePatch,
   classifyType,
   cuesToRichText,
@@ -284,6 +285,90 @@ test('buildFieldData classifies a short clip as an exhortation', () => {
   );
   assert.equal(data.type, 'Exhortation');
   assert.equal(data.series, null);
+});
+
+/* ---------------------------------------------------------------- *
+ * Partial items — what a blocked YouTube fetch can still produce
+ * ---------------------------------------------------------------- */
+
+const LISTING_CONTEXT = {
+  speakers: SPEAKERS,
+  series: SERIES,
+  sermonMinSeconds: 900,
+  now: '2026-09-04T00:00:00.000Z',
+};
+
+test('buildPlaceholderFieldData builds a real item from listing data alone', () => {
+  const data = buildPlaceholderFieldData(
+    {
+      id: 'Nj13WqtGjq0',
+      title: 'Boaz Prince - Pray and Give | Nehemiah 1',
+      duration: 2865,
+    },
+    LISTING_CONTEXT
+  );
+
+  assert.equal(data.name, 'Pray and Give');
+  assert.equal(data['youtube-video-id'], 'Nj13WqtGjq0');
+  assert.equal(data['video-url'], 'https://www.youtube.com/watch?v=Nj13WqtGjq0');
+  assert.equal(data['duration-seconds'], 2865);
+  assert.equal(data.type, 'Sermon');
+  // The reference is read off the raw title, so it survives the fetch failing.
+  assert.equal(data['scripture-raw'], 'Nehemiah 1');
+  assert.deepEqual(data['speaker-s'], ['sp-boaz']);
+});
+
+test('buildPlaceholderFieldData leaves what only a full fetch knows empty', () => {
+  const data = buildPlaceholderFieldData(
+    { id: 'abc', title: 'Honor God’s Name', duration: 400 },
+    LISTING_CONTEXT
+  );
+
+  // Never guessed: `date` and `name` are fill-only, so a wrong value sticks.
+  assert.equal(data.date, null);
+  assert.equal(data.thumbnail, null);
+  assert.equal(data.description, '');
+  assert.equal(data.transcript, '');
+  assert.equal(data.type, 'Exhortation');
+});
+
+test('a partial item carries no last-synced, so it stays eligible for a re-fetch', () => {
+  const data = buildPlaceholderFieldData(
+    { id: 'abc', title: 'Run to Win', duration: 1200 },
+    LISTING_CONTEXT
+  );
+
+  assert.equal('last-synced' in data, false);
+  // This is the whole mechanism: needsWork() reads it as never synced.
+  assert.equal(needsWork({ fieldData: data }), true);
+});
+
+test('a re-fetch fills a partial item in without --force', () => {
+  const partial = buildPlaceholderFieldData(
+    { id: 'abc', title: 'Run to Win', duration: 1200 },
+    LISTING_CONTEXT
+  );
+
+  const full = buildFieldData(
+    {
+      id: 'abc',
+      title: 'Run to Win',
+      duration: 1200,
+      description: 'Sunday service.',
+      timestamp: 1783619659,
+      thumbnail: 'https://i.ytimg.com/vi/abc/maxresdefault.jpg',
+    },
+    { ...LISTING_CONTEXT, transcriptHtml: '<p>words</p>' }
+  );
+
+  const { patch, changed } = buildUpdatePatch(full, partial);
+  assert.equal(changed, true);
+  assert.equal(patch.thumbnail, 'https://i.ytimg.com/vi/abc/maxresdefault.jpg');
+  assert.equal(patch.transcript, '<p>words</p>');
+  assert.ok(patch.date);
+  assert.ok(patch.description);
+  // type is first-sync-only: the partial item already classified it.
+  assert.equal('type' in patch, false);
 });
 
 /* ---------------------------------------------------------------- *

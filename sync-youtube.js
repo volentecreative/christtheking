@@ -22,11 +22,20 @@
  *   node sync-youtube.js --draft          # create new items as drafts instead of live
  *   node sync-youtube.js --concurrency 2  # parallel YouTube fetches (default 3)
  *   node sync-youtube.js --max-work 30    # fetch at most 30 videos this run
+ *   node sync-youtube.js --no-partial     # don't create items YouTube wouldn't describe
+ *   node sync-youtube.js --strict         # exit non-zero if any video is left unsynced
  *
  * Backfilling a large backlog? Use your logged-in session, or YouTube will
  * throttle you into timeouts:  export YTDLP_COOKIES_FROM_BROWSER=chrome
  *
- * Exit codes: 0 = clean, 1 = one or more videos failed, 2 = fatal config error.
+ * When YouTube refuses to describe a video — a bot check on the IP, or a
+ * throttle — a video that is missing from Webflow is still created from the
+ * channel listing (title, duration, and what those imply), with the fields only
+ * the full fetch knows left blank for a later run to fill. See
+ * buildPlaceholderFieldData in lib/parse.js.
+ *
+ * Exit codes: 0 = clean, 1 = a Webflow write failed, 2 = fatal config error.
+ * A video YouTube would not hand over is deferred work, not a failed run.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -36,6 +45,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mapWithConcurrency } from './lib/concurrency.js';
 import {
   buildFieldData,
+  buildPlaceholderFieldData,
   buildUpdatePatch,
   cuesToRichText,
   needsWork,
@@ -118,6 +128,12 @@ function loadConfig() {
     concurrency: Number(
       process.env.CTK_CONCURRENCY || file.concurrency || DEFAULTS.concurrency
     ),
+    // Was missing from this object, so `config.failureLimit` read undefined and
+    // `consecutiveFailures >= undefined` was false forever — the circuit breaker
+    // below could never trip, which is exactly the run it exists to cut short.
+    failureLimit: Number(
+      process.env.CTK_FAILURE_LIMIT || file.failureLimit || DEFAULTS.failureLimit
+    ),
   };
 }
 
@@ -132,6 +148,8 @@ function parseArgs(argv) {
     video: null,
     concurrency: null,
     maxWork: null,
+    partial: true,
+    strict: false,
     verbose: false,
   };
 
@@ -141,6 +159,8 @@ function parseArgs(argv) {
       case '--dry-run': options.dryRun = true; break;
       case '--force': options.force = true; break;
       case '--no-transcripts': options.transcripts = false; break;
+      case '--no-partial': options.partial = false; break;
+      case '--strict': options.strict = true; break;
       case '--draft': options.draft = true; break;
       case '--verbose': case '-v': options.verbose = true; break;
       case '--limit': options.limit = Number(argv[++i]); break;
@@ -182,6 +202,23 @@ const log = {
 function fail(message) {
   console.error(`\nFATAL: ${message}\n`);
   process.exit(2);
+}
+
+/**
+ * yt-dlp writes its errors for a human at a terminal: the bot-check message is
+ * five lines of wiki links, and the timeout message carries the whole command.
+ * Repeated 9 or 79 times they bury the run, so the two we actually see get one
+ * line each.
+ */
+function describeFetchError(message) {
+  if (/Sign in to confirm/i.test(message)) {
+    return 'YouTube demanded a sign-in — bot check on this IP';
+  }
+  const timeout = /timed out after (\d+)ms/.exec(message);
+  if (timeout) {
+    return `timed out after ${Math.round(Number(timeout[1]) / 1000)}s (YouTube throttling)`;
+  }
+  return message;
 }
 
 function uploadedBefore(info, cutoff) {
@@ -264,13 +301,18 @@ async function main() {
   // --- Candidate videos --------------------------------------------------
   let candidates;
   if (options.video) {
-    candidates = [{ id: options.video, title: '(single video)', duration: 0, live_status: null }];
+    // No listing data for a one-off id: title and duration are unknown, not
+    // empty, so this candidate can never stand in for a fetch that fails.
+    candidates = [
+      { id: options.video, title: '', duration: 0, live_status: null, fromListing: false },
+    ];
   } else {
     try {
       candidates = await listChannelVideos(config.channelUrl, { limit: options.limit });
     } catch (error) {
       fail(`Could not list the channel: ${error.message}`);
     }
+    for (const candidate of candidates) candidate.fromListing = true;
     log.step(`YouTube: ${candidates.length} uploads on the channel`);
   }
 
@@ -408,12 +450,58 @@ async function main() {
   // --- Phase 2: write to Webflow, serially -------------------------------
   const summary = {
     created: [],
+    partial: 0,
     updated: [],
     unchanged: alreadyComplete,
     skipped: 0,
-    failed: [],
+    // Two different things, kept apart because only one of them is a broken run:
+    // YouTube declining to describe a video is deferred work, a Webflow write
+    // that errored is a real failure. See the exit code at the bottom.
+    fetchFailed: [],
+    writeFailed: [],
     notAttempted: 0,
   };
+
+  /**
+   * Create a brand-new Media item. Shared by the full-metadata path and the
+   * partial path so slug de-duplication and empty-field pruning can't drift.
+   */
+  async function createItem(desired, { partial = false, transcriptHtml = '' } = {}) {
+    const slug = uniqueSlug(slugify(desired.name), takenSlugs);
+    takenSlugs.add(slug);
+
+    const fieldData = { ...desired, slug };
+    for (const key of Object.keys(fieldData)) {
+      const value = fieldData[key];
+      if (value === null || value === '' || (Array.isArray(value) && !value.length)) {
+        delete fieldData[key];
+      }
+    }
+    fieldData.name = desired.name;
+    fieldData.slug = slug;
+
+    if (!options.dryRun) {
+      if (options.draft) {
+        await webflow.createDraftItem(config.mediaCollectionId, fieldData);
+      } else {
+        await webflow.createLiveItem(config.mediaCollectionId, fieldData);
+      }
+    }
+
+    summary.created.push({
+      title: desired.name,
+      type: desired.type,
+      scripture: desired['scripture-raw'],
+      transcript: Boolean(transcriptHtml),
+      partial,
+    });
+    log.step(
+      `+ ${desired.name} [${desired.type}]` +
+        `${desired['scripture-raw'] ? ` · ${desired['scripture-raw']}` : ''}` +
+        `${transcriptHtml ? ' · transcript' : ''}` +
+        `${partial ? ' · PARTIAL — title and duration only' : ''}`
+    );
+  }
 
   log.info('');
 
@@ -424,18 +512,49 @@ async function main() {
     if (result.error) {
       if (result.error.circuitSkipped) {
         summary.notAttempted++;
-        continue;
+      } else {
+        summary.fetchFailed.push({
+          id: job.candidate.id,
+          title: job.candidate.title,
+          error: result.error.message,
+        });
+        log.error(
+          `${job.candidate.title || job.candidate.id}: ${describeFetchError(result.error.message)}`
+        );
       }
-      summary.failed.push({
-        id: job.candidate.id,
-        title: job.candidate.title,
-        error: result.error.message,
-      });
-      // The full yt-dlp command in a timeout message is noise 79 times over.
-      const message = /timed out after (\d+)ms/.test(result.error.message)
-        ? `timed out after ${Math.round(Number(RegExp.$1) / 1000)}s (YouTube throttling)`
-        : result.error.message;
-      log.error(`${job.candidate.title || job.candidate.id}: ${message}`);
+
+      // YouTube wouldn't describe this video, but the channel listing already
+      // did — title and duration, which is enough for a real item. Create it now
+      // rather than leaving the video off the site until YouTube relents; the
+      // fields only the full fetch knows stay blank, and because a partial item
+      // gets no `last-synced`, needsWork() keeps re-fetching it until they fill.
+      //
+      // Three cases can't take this path: an item that already exists (there is
+      // nothing to create), --video (no listing data, so no title or duration),
+      // and --since (the cutoff is a date, and a date is exactly what we lack).
+      const canStandIn =
+        options.partial && !job.existing && job.candidate.fromListing && !options.since;
+      if (!canStandIn) continue;
+
+      try {
+        await createItem(
+          buildPlaceholderFieldData(job.candidate, {
+            speakers,
+            series,
+            sermonMinSeconds: config.sermonMinSeconds,
+            now,
+          }),
+          { partial: true }
+        );
+        summary.partial++;
+      } catch (error) {
+        summary.writeFailed.push({
+          id: job.candidate.id,
+          title: job.candidate.title,
+          error: error.message,
+        });
+        log.error(`${job.candidate.title || job.candidate.id}: ${error.message}`);
+      }
       continue;
     }
 
@@ -489,41 +608,10 @@ async function main() {
         summary.updated.push({ title: shownName, fields: changedFields });
         log.step(`~ ${shownName} → ${changedFields.join(', ')}${options.verbose ? renamed : ''}`);
       } else {
-        const slug = uniqueSlug(slugify(desired.name), takenSlugs);
-        takenSlugs.add(slug);
-
-        const fieldData = { ...desired, slug };
-        for (const key of Object.keys(fieldData)) {
-          const value = fieldData[key];
-          if (value === null || value === '' || (Array.isArray(value) && !value.length)) {
-            delete fieldData[key];
-          }
-        }
-        fieldData.name = desired.name;
-        fieldData.slug = slug;
-
-        if (!options.dryRun) {
-          if (options.draft) {
-            await webflow.createDraftItem(config.mediaCollectionId, fieldData);
-          } else {
-            await webflow.createLiveItem(config.mediaCollectionId, fieldData);
-          }
-        }
-
-        summary.created.push({
-          title: desired.name,
-          type: desired.type,
-          scripture: desired['scripture-raw'],
-          transcript: Boolean(transcriptHtml),
-        });
-        log.step(
-          `+ ${desired.name} [${desired.type}]` +
-            `${desired['scripture-raw'] ? ` · ${desired['scripture-raw']}` : ''}` +
-            `${transcriptHtml ? ' · transcript' : ''}`
-        );
+        await createItem(desired, { transcriptHtml });
       }
     } catch (error) {
-      summary.failed.push({ id: candidate.id, title: info.title, error: error.message });
+      summary.writeFailed.push({ id: candidate.id, title: info.title, error: error.message });
       log.error(`${info.title || candidate.id}: ${error.message}`);
     }
   }
@@ -531,12 +619,16 @@ async function main() {
   // --- Summary -----------------------------------------------------------
   const elapsed = Math.round((Date.now() - startedAt.getTime()) / 1000);
   log.info(
-    `\nDone in ${elapsed}s — ${summary.created.length} created, ${summary.updated.length} updated, ` +
-      `${summary.unchanged} unchanged, ${summary.skipped} skipped, ${summary.failed.length} failed` +
+    `\nDone in ${elapsed}s — ${summary.created.length} created` +
+      `${summary.partial ? ` (${summary.partial} partial)` : ''}, ` +
+      `${summary.updated.length} updated, ${summary.unchanged} unchanged, ` +
+      `${summary.skipped} skipped, ${summary.writeFailed.length} failed` +
       `${options.dryRun ? ' (dry run)' : ''}\n`
   );
 
-  const remaining = summary.failed.length + summary.notAttempted + deferred;
+  // Videos YouTube would not describe. Not failures — work for the next run.
+  const unfetched = summary.fetchFailed.length + summary.notAttempted;
+  const remaining = unfetched + deferred;
 
   if (summary.notAttempted) {
     log.info(`${summary.notAttempted} video(s) not attempted — the run stopped early.`);
@@ -545,21 +637,50 @@ async function main() {
     log.info(`${deferred} video(s) deferred by --max-work.`);
   }
 
-  if (summary.failed.length) {
-    const throttled = summary.failed.filter((f) => /timed out/.test(f.error)).length;
-
-    log.info(`\n${summary.failed.length} failed:`);
-    for (const failure of summary.failed.slice(0, 10)) {
-      const message = /timed out/.test(failure.error) ? 'timed out (throttled)' : failure.error;
-      log.info(`  https://www.youtube.com/watch?v=${failure.id} — ${message}`);
+  if (summary.writeFailed.length) {
+    log.info(`\n${summary.writeFailed.length} Webflow write(s) failed:`);
+    for (const failure of summary.writeFailed.slice(0, 10)) {
+      log.info(`  https://www.youtube.com/watch?v=${failure.id} — ${failure.error}`);
     }
-    if (summary.failed.length > 10) {
-      log.info(`  …and ${summary.failed.length - 10} more`);
+    if (summary.writeFailed.length > 10) {
+      log.info(`  …and ${summary.writeFailed.length - 10} more`);
     }
+  }
 
-    if (throttled > 3) {
+  if (summary.fetchFailed.length) {
+    const botGated = summary.fetchFailed.filter((f) => /Sign in to confirm/i.test(f.error)).length;
+    const throttled = summary.fetchFailed.filter((f) => /timed out/.test(f.error)).length;
+
+    log.info(`\n${summary.fetchFailed.length} video(s) YouTube would not describe:`);
+    for (const failure of summary.fetchFailed.slice(0, 10)) {
       log.info(
-        '\nMost failures are timeouts, which means YouTube throttled this run.\n' +
+        `  https://www.youtube.com/watch?v=${failure.id} — ${describeFetchError(failure.error)}`
+      );
+    }
+    if (summary.fetchFailed.length > 10) {
+      log.info(`  …and ${summary.fetchFailed.length - 10} more`);
+    }
+
+    if (summary.partial) {
+      log.info(
+        `\n${summary.partial} of them were still created from the channel listing, with\n` +
+          'the title, duration and type YouTube gave up front. Thumbnail, date,\n' +
+          'description and transcript are blank, and because a partial item carries no\n' +
+          '`last-synced`, the next run that gets through fills them in — no --force.\n'
+      );
+    }
+
+    if (botGated > 3) {
+      log.info(
+        'Most of these are bot checks, not throttling: YouTube gates the IP this\n' +
+          'ran from. Cloud runners (GitHub Actions included) are gated as a matter of\n' +
+          'course, and waiting does not clear it. To fetch the full metadata:\n' +
+          '  1. Run from a residential IP — a Mac, or a self-hosted runner on one.\n' +
+          '  2. Use your logged-in session there:  export YTDLP_COOKIES_FROM_BROWSER=chrome\n'
+      );
+    } else if (throttled > 3) {
+      log.info(
+        'Most of these are timeouts, which means YouTube throttled this run.\n' +
           'Nothing is lost — re-running picks up exactly what is missing. To get\n' +
           'through the rest:\n' +
           '  1. Wait a few hours. The throttling decays.\n' +
@@ -571,10 +692,23 @@ async function main() {
   }
 
   if (remaining) {
-    log.info(`${remaining} video(s) still to sync. Re-run when ready.\n`);
+    log.info(`${remaining} video(s) still to fetch in full. Re-run when ready.\n`);
   }
 
-  return summary.failed.length ? 1 : 0;
+  // Exit 1 ONLY for a real failure — a Webflow write that errored.
+  //
+  // A video YouTube declines to hand over is NOT a failure. It bot-gates shared
+  // cloud IPs as a matter of course, so treating that as a broken run paints
+  // every CI run red — which trains you to ignore the one run that genuinely
+  // breaks. Nothing is lost either way: the video is still created from the
+  // listing, and the next run that gets through fills in the rest.
+  //
+  // Pass --strict when you DO want unfetched videos to fail the run.
+  if (options.strict && unfetched) {
+    log.warn(`--strict: ${unfetched} video(s) were not fetched, exiting non-zero`);
+    return 1;
+  }
+  return summary.writeFailed.length ? 1 : 0;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {

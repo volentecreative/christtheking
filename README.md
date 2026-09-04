@@ -56,10 +56,15 @@ node sync-youtube.js --draft          # create as drafts instead of publishing l
 node sync-youtube.js --force          # refresh YouTube-owned fields on existing items
 node sync-youtube.js --concurrency 2   # parallel YouTube fetches (default 3)
 node sync-youtube.js --max-work 25    # fetch at most 25 videos this run
+node sync-youtube.js --no-partial     # don't create items YouTube wouldn't describe
+node sync-youtube.js --strict         # exit non-zero if any video is left unsynced
 node sync-youtube.js --verbose
 ```
 
-Exit codes: `0` clean · `1` one or more videos failed · `2` config/setup problem.
+Exit codes: `0` clean · `1` a Webflow write failed · `2` config/setup problem.
+
+A video YouTube refuses to describe is **not** a failed run — see
+[When YouTube won't answer](#when-youtube-wont-answer).
 
 ---
 
@@ -86,6 +91,39 @@ item, so **don't edit that field in the Designer.**
 | `last-synced` | timestamp of the run |
 
 New items are **created live** (published immediately).
+
+### When YouTube won't answer
+
+YouTube bot-gates and throttles by IP, and a blocked per-video fetch used to mean
+the video simply never reached the site. It no longer does.
+
+The channel listing is a separate, much cheaper call that YouTube still answers
+when it is refusing the per-video player endpoint, and it carries the title and
+duration. So a video that is missing from Webflow is **created anyway**, from
+that listing alone:
+
+| Written from the listing | Left blank until a full fetch |
+|---|---|
+| `name`, `slug`, `youtube-video-id`, `video-url` | `thumbnail` |
+| `duration-seconds`, `type` | `date` |
+| `scripture-raw`, `speaker-s`, `series` | `description`, `transcript` |
+
+Nothing is guessed. `date` and `name` are fill-only, so a value invented here
+would be permanent — a blank is recoverable, a wrong date is not.
+
+The item is logged as `PARTIAL` and gets **no `last-synced`**, which is the whole
+mechanism: `needsWork()` reads an item without it as never synced, so every later
+run re-fetches that video until YouTube answers, and the blank fields then fill
+through the ordinary fill-only path. No `--force` needed, and a title you fixed
+in the Designer meanwhile is still safe.
+
+Partial items only happen for videos **missing from Webflow**. `--no-partial`
+turns them off; `--strict` makes any unfetched video exit non-zero. Neither
+`--video ID` (no listing data) nor `--since` (the cutoff is a date, which is
+exactly what a partial item lacks) will create one.
+
+This is what makes the GitHub Actions run useful despite the block: it lands the
+videos, and a later run from a Mac fills in the rest.
 
 ### The rule that protects your work
 
