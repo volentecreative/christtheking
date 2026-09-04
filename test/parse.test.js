@@ -324,12 +324,54 @@ test('buildPlaceholderFieldData leaves what only a full fetch knows empty', () =
     LISTING_CONTEXT
   );
 
-  // Never guessed: `date` and `name` are fill-only, so a wrong value sticks.
-  assert.equal(data.date, null);
   assert.equal(data.thumbnail, null);
   assert.equal(data.description, '');
   assert.equal(data.transcript, '');
   assert.equal(data.type, 'Exhortation');
+  // No feed date offered, so no date at all — `date` is fill-only, so a guess
+  // would stick forever.
+  assert.equal(data.date, null);
+});
+
+test('buildPlaceholderFieldData takes the upload date from the channel feed', () => {
+  const data = buildPlaceholderFieldData(
+    {
+      id: 'abc',
+      title: 'Honor God’s Name',
+      duration: 400,
+      publishedAt: '2026-09-01T18:30:00.000Z',
+    },
+    LISTING_CONTEXT
+  );
+
+  assert.equal(data.date, '2026-09-01T18:30:00.000Z');
+});
+
+test('an unusable feed date leaves the field blank rather than writing garbage', () => {
+  for (const publishedAt of ['', 'sometime', null, undefined]) {
+    const data = buildPlaceholderFieldData(
+      { id: 'abc', title: 'Run to Win', duration: 1200, publishedAt },
+      LISTING_CONTEXT
+    );
+    assert.equal(data.date, null, `publishedAt ${JSON.stringify(publishedAt)}`);
+  }
+});
+
+test('a feed-dated partial item keeps its date on the later full fetch', () => {
+  // `date` is fill-only, so whatever the partial item wrote is permanent. That
+  // is safe only because the feed date is exact, not approximated.
+  const partial = buildPlaceholderFieldData(
+    { id: 'abc', title: 'Run to Win', duration: 1200, publishedAt: '2026-09-01T18:30:00.000Z' },
+    LISTING_CONTEXT
+  );
+
+  const full = buildFieldData(
+    { id: 'abc', title: 'Run to Win', duration: 1200, timestamp: 1788000000 },
+    { ...LISTING_CONTEXT, transcriptHtml: '' }
+  );
+
+  const { patch } = buildUpdatePatch(full, partial, { force: true });
+  assert.equal('date' in patch, false);
 });
 
 test('a partial item carries no last-synced, so it stays eligible for a re-fetch', () => {

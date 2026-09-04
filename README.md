@@ -102,19 +102,31 @@ when it is refusing the per-video player endpoint, and it carries the title and
 duration. So a video that is missing from Webflow is **created anyway**, from
 that listing alone:
 
-| Written from the listing | Left blank until a full fetch |
+| Written without the full fetch | Left blank until a full fetch |
 |---|---|
 | `name`, `slug`, `youtube-video-id`, `video-url` | `thumbnail` |
-| `duration-seconds`, `type` | `date` |
-| `scripture-raw`, `speaker-s`, `series` | `description`, `transcript` |
+| `duration-seconds`, `type` | `description` |
+| `scripture-raw`, `speaker-s`, `series` | `transcript` |
+| `date` — from the channel's Atom feed | |
 
-Nothing is guessed. `date` and `name` are fill-only, so a value invented here
-would be permanent — a blank is recoverable, a wrong date is not.
+The date comes from `https://www.youtube.com/feeds/videos.xml?channel_id=…`, read
+by `lib/feed.js`. That feed is plain XML on a different path from the player
+endpoint YouTube gates, needs no key or session, and carries an **exact**
+`<published>` stamp — the same moment the full fetch would have recorded. It
+covers only the ~15 newest uploads, which is exactly the set a blocked run is
+usually trying to create; anything older keeps a blank date. If the feed itself
+can't be read, the run says so and carries on without dates.
 
-The item is logged as `PARTIAL` and gets **no `last-synced`**, which is the whole
-mechanism: `needsWork()` reads an item without it as never synced, so every later
-run re-fetches that video until YouTube answers, and the blank fields then fill
-through the ordinary fill-only path. No `--force` needed, and a title you fixed
+Nothing is guessed. `date` and `name` are fill-only, so a value written here is
+permanent — which is why the date must be the feed's exact stamp and never the
+approximation yt-dlp derives from YouTube's relative "3 weeks ago" listing text.
+That approximate timestamp is deliberately discarded in `lib/ytdlp.js`.
+
+The item is logged as `PARTIAL` (or `PARTIAL — no date` when the feed had nothing
+for it) and gets **no `last-synced`**, which is the whole mechanism: `needsWork()`
+reads an item without it as never synced, so every later run re-fetches that
+video until YouTube answers, and the blank fields then fill through the ordinary
+fill-only path. No `--force` needed, and a title you fixed
 in the Designer meanwhile is still safe.
 
 Partial items only happen for videos **missing from Webflow**. `--no-partial`

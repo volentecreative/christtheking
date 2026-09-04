@@ -30,9 +30,10 @@
  *
  * When YouTube refuses to describe a video — a bot check on the IP, or a
  * throttle — a video that is missing from Webflow is still created from the
- * channel listing (title, duration, and what those imply), with the fields only
- * the full fetch knows left blank for a later run to fill. See
- * buildPlaceholderFieldData in lib/parse.js.
+ * channel listing (title, duration, and what those imply) plus the upload date
+ * from the channel's Atom feed, with the fields only the full fetch knows left
+ * blank for a later run to fill. See buildPlaceholderFieldData in lib/parse.js
+ * and lib/feed.js.
  *
  * Exit codes: 0 = clean, 1 = a Webflow write failed, 2 = fatal config error.
  * A video YouTube would not hand over is deferred work, not a failed run.
@@ -54,6 +55,7 @@ import {
   slugify,
   uniqueSlug,
 } from './lib/parse.js';
+import { fetchChannelFeedDates } from './lib/feed.js';
 import { WebflowClient } from './lib/webflow.js';
 import { fetchVideoBundle, listChannelVideos, ytdlpVersion } from './lib/ytdlp.js';
 
@@ -300,6 +302,7 @@ async function main() {
 
   // --- Candidate videos --------------------------------------------------
   let candidates;
+  let channelId = null;
   if (options.video) {
     // No listing data for a one-off id: title and duration are unknown, not
     // empty, so this candidate can never stand in for a fetch that fails.
@@ -308,7 +311,9 @@ async function main() {
     ];
   } else {
     try {
-      candidates = await listChannelVideos(config.channelUrl, { limit: options.limit });
+      const listing = await listChannelVideos(config.channelUrl, { limit: options.limit });
+      candidates = listing.videos;
+      channelId = listing.channelId;
     } catch (error) {
       fail(`Could not list the channel: ${error.message}`);
     }
@@ -451,6 +456,7 @@ async function main() {
   const summary = {
     created: [],
     partial: 0,
+    partialDated: 0,
     updated: [],
     unchanged: alreadyComplete,
     skipped: 0,
@@ -499,8 +505,30 @@ async function main() {
       `+ ${desired.name} [${desired.type}]` +
         `${desired['scripture-raw'] ? ` · ${desired['scripture-raw']}` : ''}` +
         `${transcriptHtml ? ' · transcript' : ''}` +
-        `${partial ? ' · PARTIAL — title and duration only' : ''}`
+        `${partial ? ` · PARTIAL${desired.date ? '' : ' — no date'}` : ''}`
     );
+  }
+
+  // Upload dates for the partial path. What YouTube blocks is the per-video
+  // player endpoint; the channel's Atom feed is plain XML on another path and
+  // normally still answers, so an item created from the listing can carry its
+  // real date instead of none. Read only when a partial item is actually on the
+  // cards, and never fatal — no feed just means no date, which is recoverable.
+  let feedDates = new Map();
+  const partialsPossible =
+    options.partial &&
+    !options.since &&
+    fetchResults.some(
+      (result, i) => result.error && !toFetch[i].existing && toFetch[i].candidate.fromListing
+    );
+
+  if (partialsPossible) {
+    try {
+      feedDates = await fetchChannelFeedDates(channelId);
+      log.step(`channel feed: upload dates for ${feedDates.size} recent video(s)`);
+    } catch (error) {
+      log.warn(`channel feed unreadable, partial items will have no date: ${error.message}`);
+    }
   }
 
   log.info('');
@@ -537,16 +565,13 @@ async function main() {
       if (!canStandIn) continue;
 
       try {
-        await createItem(
-          buildPlaceholderFieldData(job.candidate, {
-            speakers,
-            series,
-            sermonMinSeconds: config.sermonMinSeconds,
-            now,
-          }),
-          { partial: true }
+        const desired = buildPlaceholderFieldData(
+          { ...job.candidate, publishedAt: feedDates.get(job.candidate.id) || null },
+          { speakers, series, sermonMinSeconds: config.sermonMinSeconds, now }
         );
+        await createItem(desired, { partial: true });
         summary.partial++;
+        if (desired.date) summary.partialDated++;
       } catch (error) {
         summary.writeFailed.push({
           id: job.candidate.id,
@@ -662,11 +687,17 @@ async function main() {
     }
 
     if (summary.partial) {
+      const dates = summary.partialDated
+        ? `${summary.partialDated} of them also carry their real upload date, read from the channel feed.`
+        : 'No upload date was available for any of them, so that field is blank too.';
+
       log.info(
-        `\n${summary.partial} of them were still created from the channel listing, with\n` +
-          'the title, duration and type YouTube gave up front. Thumbnail, date,\n' +
-          'description and transcript are blank, and because a partial item carries no\n' +
-          '`last-synced`, the next run that gets through fills them in — no --force.\n'
+        `\n${summary.partial} of them were still created from the channel listing, with the ` +
+          'title,\nduration and type YouTube gave up front.\n' +
+          `\n${dates}\n` +
+          '\nThumbnail, description and transcript are blank, and because a partial item\n' +
+          'carries no `last-synced`, the next run that gets through fills them in — no\n' +
+          '--force needed.\n'
       );
     }
 
