@@ -16,9 +16,11 @@ import {
   parseIgnoreList,
   parseScripture,
   parseVtt,
+  pickVttFile,
   pickThumbnail,
   resolveDate,
   slugify,
+  videoIdsInFilename,
   uniqueSlug,
 } from '../lib/parse.js';
 
@@ -285,6 +287,72 @@ test('buildFieldData classifies a short clip as an exhortation', () => {
   );
   assert.equal(data.type, 'Exhortation');
   assert.equal(data.series, null);
+});
+
+/* ---------------------------------------------------------------- *
+ * Local caption files — matching them to the right sermon
+ * ---------------------------------------------------------------- */
+
+const KNOWN = new Set(['Nj13WqtGjq0', 'XhDY8Bs-bwk', 'IQ5lgSYMrkk']);
+
+test('videoIdsInFilename reads the id out of yt-dlp default naming', () => {
+  assert.deepEqual(
+    videoIdsInFilename('Main Session 1 - Dating | Doug Wilson [Nj13WqtGjq0].en.vtt', KNOWN),
+    ['Nj13WqtGjq0']
+  );
+});
+
+test('videoIdsInFilename handles a bare-id template, and a full path', () => {
+  assert.deepEqual(videoIdsInFilename('XhDY8Bs-bwk.en.vtt', KNOWN), ['XhDY8Bs-bwk']);
+  assert.deepEqual(
+    videoIdsInFilename('/Users/josh/caps/nested/IQ5lgSYMrkk.en-orig.vtt', KNOWN),
+    ['IQ5lgSYMrkk'],
+    'directories are not searched for ids'
+  );
+});
+
+test('videoIdsInFilename will not invent a match from title text', () => {
+  // "Forgiveness" is eleven legal id characters. Checking against the ids
+  // actually in Webflow is what stops it becoming a wrong-sermon transcript.
+  assert.deepEqual(videoIdsInFilename('Forgiveness.en.vtt', KNOWN), []);
+  assert.deepEqual(videoIdsInFilename('Some Other Channel [ZZZZZZZZZZZ].en.vtt', KNOWN), []);
+  assert.deepEqual(videoIdsInFilename('', KNOWN), []);
+});
+
+test('videoIdsInFilename prefers the bracketed id over a loose one', () => {
+  // The title happens to contain another video's id; the brackets are yt-dlp's
+  // and are authoritative.
+  assert.deepEqual(
+    videoIdsInFilename('Reply to XhDY8Bs-bwk [Nj13WqtGjq0].en.vtt', KNOWN),
+    ['Nj13WqtGjq0']
+  );
+});
+
+test('videoIdsInFilename reports every match so the caller can refuse', () => {
+  const ids = videoIdsInFilename('XhDY8Bs-bwk and IQ5lgSYMrkk.en.vtt', KNOWN);
+  assert.equal(ids.length, 2, 'ambiguous files are surfaced, never guessed at');
+});
+
+test('pickVttFile prefers a human track over an auto-generated one', () => {
+  assert.equal(
+    pickVttFile(['Sermon [abc].en.a.en.vtt', 'Sermon [abc].en.vtt']),
+    'Sermon [abc].en.vtt'
+  );
+  assert.equal(
+    pickVttFile(['Sermon [abc].en-orig.vtt', 'Sermon [abc].en.vtt']),
+    'Sermon [abc].en.vtt'
+  );
+});
+
+test('pickVttFile still returns a machine track when it is all there is', () => {
+  assert.equal(pickVttFile(['Sermon [abc].en.a.en.vtt']), 'Sermon [abc].en.a.en.vtt');
+});
+
+test('pickVttFile ignores non-vtt files and is order-independent', () => {
+  assert.equal(pickVttFile(['notes.txt', 'thumb.jpg']), null);
+  assert.equal(pickVttFile([]), null);
+  const files = ['b [abc].en.vtt', 'a [abc].en.vtt'];
+  assert.equal(pickVttFile(files), pickVttFile([...files].reverse()), 'listing order cannot decide');
 });
 
 /* ---------------------------------------------------------------- *

@@ -12,6 +12,8 @@
     "dry-run": "node sync-youtube.js --dry-run",
     "test": "node --test test/*.test.js",
     "podcast": "node sync-podcast.js",
-    "podcast:dry": "node sync-podcast.js --dry-run --report podcast-report.csv"
+    "podcast:dry": "node sync-podcast.js --dry-run --report podcast-report.csv",
+    "transcripts": "node import-transcripts.js",
+    "transcripts:dry": "node import-transcripts.js --dry-run"
   }
 }

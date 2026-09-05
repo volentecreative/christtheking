@@ -268,6 +268,63 @@ To re-run speaker/series matching after adding to those collections, use
 
 ---
 
+## Transcripts from local .vtt files (`import-transcripts.js`)
+
+Transcripts are the one field a GitHub runner can never supply: captions come
+from the player endpoint YouTube bot-gates, and no amount of cleverness gets
+around it. So they have to come from a machine YouTube will talk to.
+
+If you already have the `.vtt` files — because you ran yt-dlp on your Mac — this
+pushes them straight into the Media collection. It never contacts YouTube at
+all, so it can't be throttled or gated, and it finishes in seconds.
+
+```bash
+# 1. On a machine YouTube talks to, pull the captions:
+yt-dlp --skip-download --write-subs --write-auto-subs --sub-langs 'en.*,en' \
+       --convert-subs vtt -o '%(title)s [%(id)s].%(ext)s' \
+       https://www.youtube.com/@ChristIsKingOfStillwater/videos
+
+# 2. Preview, then import:
+node import-transcripts.js --dir ~/ctk-captions --dry-run
+node import-transcripts.js --dir ~/ctk-captions
+```
+
+`--force` replaces transcripts that are already there · `--strict` makes
+unmatched files exit non-zero · `--verbose` shows skips and which file won.
+
+Exit codes: `0` clean · `1` a Webflow write failed · `2` config/setup problem.
+
+### How files are matched
+
+**On video id, never on title.** Titles drift between YouTube and the CMS — that
+is the whole point of `normalizeTitle` — and a transcript on the wrong sermon is
+worse than no transcript.
+
+The id is read out of the filename and then checked against the ids already in
+Webflow, so any `-o` template works: `[dQw4w9WgXcQ]` in brackets, or a bare
+`dQw4w9WgXcQ.en.vtt`. That cross-check is what makes a bare scan safe —
+`Forgiveness.en.vtt` is eleven legal id characters, but "Forgiveness" is not one
+of the channel's videos, so it matches nothing instead of something wrong. A
+filename naming *two* known videos is reported and skipped, never guessed at.
+
+Where a video has several tracks, a human-written one beats yt-dlp's
+auto-generated `.a.en` and untranslated `-orig` — the same preference the main
+sync uses, now shared between them.
+
+### What it deliberately won't do
+
+- **Overwrite an existing transcript** without `--force`. Same rule as the rest
+  of the pipeline: what's already in the CMS wins.
+- **Write an empty transcript.** A `.vtt` with a header and no cues is reported
+  and skipped, because writing it would mark the item done and hide the gap.
+
+Imported items *are* marked synced, so `sync-youtube.js` stops re-fetching them
+and stops burning its `--max-work` budget on videos it can't fetch anyway.
+Descriptions aren't touched; `npm run sync -- --force` from that same machine
+still refreshes those.
+
+---
+
 ## Ignoring a video
 
 Deleting an item in the Designer does **not** keep it gone. The video is still
