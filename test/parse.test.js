@@ -11,7 +11,6 @@ import {
   formatTimestamp,
   matchSeries,
   matchSpeakers,
-  speakerNames,
   needsWork,
   normalizeTitle,
   parseIgnoreList,
@@ -793,83 +792,4 @@ test('buildFieldData normalizes the name but reads scripture from the raw title'
   );
   assert.equal(data.name, 'What Shepherds Do');
   assert.equal(data['scripture-raw'], '1 Timothy 3:1');
-});
-
-/* ------------------------------------------------------------------ *
- * speaker-names: the plain-text mirror of speaker-s
- *
- * speaker-s is a MultiReference, and Webflow renders one of those only
- * through a nested Collection List — which the media card cannot host,
- * because the card is a Link. So the names are mirrored as plain text.
- * ------------------------------------------------------------------ */
-
-const SPK = [
-  { id: 'sp-boaz', name: 'Boaz Prince' },
-  { id: 'sp-clint', name: 'Clint Manley' },
-  { id: 'sp-andy', name: 'Andy Naselli' },
-];
-
-test('speakerNames maps reference ids to a joined plain-text name', () => {
-  assert.equal(speakerNames(['sp-boaz'], SPK), 'Boaz Prince');
-  assert.equal(speakerNames(['sp-boaz', 'sp-andy'], SPK), 'Boaz Prince, Andy Naselli');
-});
-
-test('speakerNames is empty for no speakers, and drops ids it cannot resolve', () => {
-  assert.equal(speakerNames([], SPK), '');
-  assert.equal(speakerNames(undefined, SPK), '');
-  assert.equal(speakerNames(['sp-nobody'], SPK), '');
-  assert.equal(speakerNames(['sp-nobody', 'sp-clint'], SPK), 'Clint Manley');
-});
-
-test('a new item carries the mirror alongside the reference', () => {
-  const data = buildFieldData(
-    { id: 'v1', title: 'Boaz Prince - A Sermon', duration: 2000, description: '' },
-    { transcriptHtml: '', speakers: SPK, series: [], sermonMinSeconds: 900, now: 'now' }
-  );
-  assert.deepEqual(data['speaker-s'], ['sp-boaz']);
-  assert.equal(data['speaker-names'], 'Boaz Prince');
-});
-
-test('the mirror is written when the sync fills an empty speaker', () => {
-  const existing = { name: 'Kept', 'speaker-s': [], 'speaker-names': '' };
-  const { patch } = buildUpdatePatch(desired, existing, { speakers: SPK });
-  assert.deepEqual(patch['speaker-s'], ['sp-boaz']);
-  assert.equal(patch['speaker-names'], 'Boaz Prince');
-});
-
-test('the mirror repairs itself for a speaker assigned by hand', () => {
-  // speaker-s is fill-only, so the sync leaves it alone — but nothing else
-  // writes the plain text, so the mirror would otherwise stay blank forever.
-  const existing = { name: 'Kept', 'speaker-s': ['sp-clint'], 'speaker-names': '' };
-  const { patch, changed } = buildUpdatePatch(desired, existing, { speakers: SPK });
-  assert.equal(patch['speaker-s'], undefined, 'the hand-assigned reference is untouched');
-  assert.equal(patch['speaker-names'], 'Clint Manley', 'the mirror follows it');
-  assert.equal(changed, true);
-});
-
-test('a mirror that already matches is not rewritten', () => {
-  const existing = { name: 'Kept', 'speaker-s': ['sp-clint'], 'speaker-names': 'Clint Manley' };
-  const { patch } = buildUpdatePatch(desired, existing, { speakers: SPK });
-  assert.equal(patch['speaker-names'], undefined);
-});
-
-test('a stale mirror is corrected to match the reference', () => {
-  const existing = { name: 'Kept', 'speaker-s': ['sp-clint'], 'speaker-names': 'Clinton Manley' };
-  const { patch } = buildUpdatePatch(desired, existing, { speakers: SPK });
-  assert.equal(patch['speaker-names'], 'Clint Manley');
-});
-
-test('without a speakers list the mirror is left entirely alone', () => {
-  // The partial path used to call buildUpdatePatch with no options at all.
-  const existing = { name: 'Kept', 'speaker-s': ['sp-clint'], 'speaker-names': '' };
-  const { patch } = buildUpdatePatch(desired, existing);
-  assert.equal(patch['speaker-names'], undefined);
-});
-
-test('force does not drag the mirror away from the reference', () => {
-  // desired matches sp-boaz, but the item is assigned to Clint by hand.
-  const existing = { name: 'Kept', 'speaker-s': ['sp-clint'], 'speaker-names': 'Clint Manley' };
-  const { patch } = buildUpdatePatch(desired, existing, { force: true, speakers: SPK });
-  assert.equal(patch['speaker-s'], undefined);
-  assert.equal(patch['speaker-names'], undefined, 'mirror still follows the reference, not the title');
 });

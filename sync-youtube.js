@@ -606,8 +606,7 @@ async function main() {
         if (job.existing) {
           const { patch, changed, changedFields } = buildUpdatePatch(
             desired,
-            job.existing.fieldData,
-            { speakers }
+            job.existing.fieldData
           );
           // The item is still not fully synced — description and transcript need
           // the fetch that just failed. Leaving `last-synced` off keeps
@@ -660,7 +659,6 @@ async function main() {
       if (existing) {
         const { patch, changed, changedFields } = buildUpdatePatch(desired, existing.fieldData, {
           force: options.force,
-          speakers,
         });
 
         if (!changed) {
