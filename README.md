@@ -488,6 +488,19 @@ Sanity check any time: `node sync-youtube.js --dry-run --limit 3`
 
 ---
 
+## Front-end code (`webflow/`)
+
+The site's custom code lives in [`webflow/`](webflow/), version-controlled
+rather than only in the Designer. The shared behaviour — modals, the FAQ
+accordion, header measurement, the mobile menu, smooth anchor scrolling — comes
+from [narthex](https://github.com/volentecreative/narthex), Volente's
+attribute-driven library for Webflow. See [`webflow/README.md`](webflow/README.md)
+for what moved, what stayed, and the Designer-side attributes that go with it.
+
+This is unrelated to the sync scripts above; they share a repo, not a runtime.
+
+---
+
 ## Tests
 
 ```bash

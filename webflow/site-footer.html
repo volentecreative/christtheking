@@ -1,0 +1,82 @@
+<!-- Christ the King — Site settings → Custom code → FOOTER
+     Post-narthex-migration state. See narthex docs/migration-christtheking.md.
+
+     What used to be here and is now narthex:
+       - the ~200-line modal/drawer IIFE (data-modal-open, data-modal-close,
+         .modal-dim, ?modal= deep links, swipe-to-dismiss)
+         → the modal module, via vci-modal="dialog|open|close|dim|title"
+     Also retired alongside it: the applied registered script
+     "faq_accordion_toggle" → the accordion module.
+
+     What is left is presentation, and stays: the parallax keyframes and the
+     Turnstile hiding rule. -->
+
+<script src="https://cdn.jsdelivr.net/gh/volentecreative/narthex@v0.2.0/dist/narthex.min.js"
+        vci-scroll="native"
+        vci-scroll-offset="calc(var(--nav-height, 4.5rem) + 1.5rem)"></script>
+
+<script>
+(() => {
+  const style = document.createElement('style');
+
+  style.textContent = `
+    .parallax-5,
+    .parallax-10,
+    .parallax-20 {
+      animation-name: cf-parallax-y;
+      animation-duration: 1ms;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-timeline: view();
+      animation-range: entry 0% exit 100%;
+      will-change: transform;
+    }
+
+    .parallax-5 {
+      --parallax-distance: 5%;
+    }
+
+    .parallax-10 {
+      --parallax-distance: 10%;
+    }
+
+    .parallax-20 {
+      --parallax-distance: 20%;
+    }
+
+    @keyframes cf-parallax-y {
+      from {
+        transform: translateY(calc(var(--parallax-distance) * -1));
+      }
+
+      to {
+        transform: translateY(var(--parallax-distance));
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .parallax-5,
+      .parallax-10,
+      .parallax-20 {
+        animation: none;
+        transform: none;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+})();
+</script>
+
+<style>
+/* The Turnstile widget's wrapper div, hidden without removing it from the form.
+   The closing brace was missing in the live block — browsers recover at the end
+   of a stylesheet, so it worked, but nothing may be appended after it. */
+.media-filter-form > div:has([name="cf-turnstile-response"]) {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+</style>
