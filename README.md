@@ -87,6 +87,7 @@ item, so **don't edit that field in the Designer.**
 | `transcript` | captions as `<p><a href="#t=…">m:ss</a> …</p>` |
 | `scripture-raw` | first reference found in the title, else description |
 | `speaker-s` | matched against the Speakers collection |
+| `speaker-names` | the same speakers as plain text — see below |
 | `series` | matched against existing Media Series |
 | `last-synced` | timestamp of the run |
 
@@ -180,6 +181,27 @@ date, duration, transcript) only.
 **Note:** the log line for an updated item shows the name as it exists in
 Webflow, not the YouTube title. If you renamed something in the Designer, the
 sync keeps your name — run with `--verbose` to see the YouTube title alongside it.
+
+### Why there are two speaker fields
+
+`speaker-s` is a MultiReference, and Webflow can only render one of those
+through a **nested Collection List**. The media card cannot host one: the card
+is a Link, and Webflow will not nest a Collection List inside an `<a>`. So the
+navbar and the media grid had no way to show a speaker at all.
+
+`speaker-names` is the plain text of the same references, which has no nesting
+restriction and renders anywhere. It is **derived, never authored** — bind the
+card's speaker element to it, and keep editing `speaker-s` as the source of
+truth.
+
+`speakerNames()` in `lib/parse.js` builds it, and `buildUpdatePatch` derives it
+from whatever `speaker-s` *ends up* being, not from what the title matched. That
+matters because `speaker-s` is fill-only: a speaker you assign by hand is never
+overwritten, and the mirror follows your assignment rather than the sync's guess.
+The same path repairs a mirror that is blank or has drifted, so an item edited
+in the Designer is corrected on the next run. It also takes the CMS record's
+spelling, not the podcast's — the podcast titles say `Clinton Manley` where the
+CMS says `Clint Manley`.
 
 ### Title normalization
 

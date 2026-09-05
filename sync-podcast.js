@@ -30,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { matchEpisodes, parseAppleEpisodes, parseSpotifyEpisodes } from './lib/podcast.js';
 import { WebflowClient } from './lib/webflow.js';
+import { speakerNames } from './lib/parse.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -296,10 +297,21 @@ async function main() {
       const id = speakerIdByName.get(match.ep.speaker.toLowerCase());
       if (id) {
         patch['speaker-s'] = [id];
+        // The plain-text mirror takes the CMS record's spelling, not the
+        // podcast's — the titles say "Clinton Manley" where the CMS says
+        // "Clint Manley", and the site should read the same everywhere.
+        patch['speaker-names'] = speakerNames([id], speakers);
         speakerNote = match.ep.speaker;
       } else {
         speakerNote = `MISSING SPEAKER RECORD: ${match.ep.speaker}`;
       }
+    }
+
+    // Repair a mirror that is missing or stale — e.g. a speaker assigned by
+    // hand in the Designer, which nothing else writes the plain text for.
+    if (!patch['speaker-names'] && !isEmpty(data['speaker-s'])) {
+      const mirror = speakerNames(data['speaker-s'], speakers);
+      if (mirror && mirror !== data['speaker-names']) patch['speaker-names'] = mirror;
     }
 
     const action = Object.keys(patch).length ? Object.keys(patch).join(' ') : 'up to date';
