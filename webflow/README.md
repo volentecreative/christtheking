@@ -52,6 +52,43 @@ builder can create a `Dropdown` but has no Navbar type. When it happens, delete
 `vci-nav="toggle"` and `vci-nav="menu"`, keep `vci-nav="header"`, add
 `vci-nav="dim"`, and narthex goes back to watching `w--open` on `.w-nav-button`.
 
+### Proven on /test (2026-09-05)
+
+The `/test` page carries the rebuilt header, built from the stock **Navbar
+Logo Left** layout and then given this site's own classes and content:
+
+```
+NavbarWrapper  .navbar  [vci-nav="header" vci-nav-height-var="--nav-height"]
+└─ .padding-global
+   └─ .navbar_container
+      ├─ NavbarBrand   .navbar_logo-link  → .logo-wrapper > img.logo
+      ├─ NavbarMenu    .navbar_menu is-native
+      │  ├─ Dropdown "About"    → I'm New / Sundays / Beliefs / Leadership
+      │  ├─ Dropdown "Connect"  → Give / Contact
+      │  ├─ Dropdown "Learn" .mega → CMS sermon list + Resources column
+      │  └─ theme toggle link (hidden)
+      ├─ button component instance "Connect"
+      └─ NavbarButton  .navbar_hamburger → 2 × .navbar_hamburger_line
+```
+
+The element order matches the current component exactly: logo, menu, button,
+hamburger. The three dropdowns were **moved**, not rebuilt, so the mega menu
+keeps its CMS Collection List, its CMS-bound `media-card` instances and the
+"See All Sermons" button — none of which would survive a hand rebuild. Webflow
+now owns the mobile menu, and narthex is down to two attributes on the wrapper.
+
+**`.navbar_menu.is-native` is a test-only shim.** The base `.navbar_menu` still
+carries the `medium` overrides written for the hand-built menu — `position:
+absolute`, `max-height: 0`, `top: 6rem` — which fight Webflow's own mobile menu.
+The combo neutralises them for the test. Adopting this for real means deleting
+those `medium` overrides and the `.navbar_menu.is-open` combo from the base
+class, and then the shim goes away. Those styles were deliberately left alone:
+they are live on all 22 pages.
+
+Still to do if this is adopted: rebuild the real `navbar` component the same
+way (the API cannot create a Navbar element, so it is a Designer job), and drop
+`vci-nav="toggle"` / `vci-nav="menu"` from it.
+
 ### The mobile menu was never wired up
 
 `.navbar_menu.is-open` already exists in the Designer, fully styled at the
