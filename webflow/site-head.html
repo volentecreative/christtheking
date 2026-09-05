@@ -1,0 +1,121 @@
+<!-- Christ the King — Site settings → Custom code → HEAD
+     Post-narthex-migration state. See narthex docs/migration-christtheking.md.
+
+     What used to be here and is now narthex:
+       - the .navbar height measurer that wrote --nav-height
+         → vci-nav="header" vci-nav-height-var="--nav-height" on nav.navbar
+       - html { scroll-padding-top: … }
+         → vci-scroll="native" + vci-scroll-offset on the footer script tag
+
+     What is left is genuinely site-specific: the sticky-menu scrollspy. narthex
+     has no scrollspy, and .sticky-menu-nav-item.is-current is this site's own
+     active state. The jump-link preventDefault that used to live alongside it
+     is gone too — vci-scroll="native" is what takes Webflow's jQuery anchor
+     handler out of the way now, and the browser does the scrolling, which
+     respects scroll-padding-top and prefers-reduced-motion for free. -->
+
+<!-- ===========================================================
+LIGHT MODE / THEME SWITCHER — DISABLED
+Re-enable by removing this comment wrapper (this line,
+the opening line above, and the closing line at the bottom).
+===========================================================
+
+<style>
+/* Smooth transitions on mode swap */
+body {
+transition: background-color 0.2s ease, color 0.2s ease;
+}
+</style>
+<script>
+(function() {
+function applyInitialTheme() {
+// Strip any leftover from Designer/server
+document.body.classList.remove('theme-light');
+
+var saved = localStorage.getItem('ctk-theme');
+var systemPrefersLight = window.matchMedia &&
+window.matchMedia('(prefers-color-scheme: light)').matches;
+var initial = saved || (systemPrefersLight ? 'light' : 'dark');
+
+if (initial === 'light') {
+document.body.classList.add('theme-light');
+}
+}
+
+if (document.body) {
+applyInitialTheme();
+} else {
+document.addEventListener('DOMContentLoaded', applyInitialTheme);
+}
+})();
+document.addEventListener('DOMContentLoaded', function() {
+document.querySelectorAll('[data-theme-toggle]').forEach(function(btn) {
+btn.addEventListener('click', function() {
+var isLight = document.body.classList.toggle('theme-light');
+localStorage.setItem('ctk-theme', isLight ? 'light' : 'dark');
+});
+});
+});
+</script>
+
+-->
+
+<!-- ===========================================================
+     STICKY-MENU SCROLLSPY
+     Why custom code: the active state needs JS. The Designer style
+     panel still owns all appearance:
+       - "nav-height" site variable = 4.5rem fallback (used when
+         narthex hasn't measured yet, e.g. on the Designer canvas)
+       - .sticky-menu top = calc(var(--nav-height) + gutter)
+       - .sticky-menu-nav-item.is-current = active link style
+     narthex writes --nav-height (header height) and --nav-offset
+     (the header's live bottom edge, which drops as the announcement
+     bar scrolls away). The spy uses the offset when it is there.
+     =========================================================== -->
+<script>
+(function () {
+  'use strict';
+  function init() {
+    var menu = document.querySelector('.sticky-menu');
+    if (!menu) return;
+
+    var map = [];
+    menu.querySelectorAll('a[href^="#"]').forEach(function (a) {
+      var target = document.getElementById(a.getAttribute('href').slice(1));
+      if (target) map.push({ link: a, target: target });
+    });
+    if (!map.length) return;
+
+    function headerOffset() {
+      var v = parseFloat(getComputedStyle(document.documentElement)
+        .getPropertyValue('--nav-offset'));
+      if (!isNaN(v)) return v;
+      var n = document.querySelector('.navbar');
+      return n ? n.offsetHeight : 72;
+    }
+
+    var current = null;
+    function spy() {
+      var offset = headerOffset() + 32;
+      var active = map[0];
+      map.forEach(function (m) {
+        if (m.target.getBoundingClientRect().top <= offset) active = m;
+      });
+      if (active === current) return;
+      current = active;
+      map.forEach(function (m) {
+        m.link.classList.toggle('is-current', m === active);
+      });
+    }
+    window.addEventListener('scroll', spy, { passive: true });
+    window.addEventListener('resize', spy);
+    spy();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
