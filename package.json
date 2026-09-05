@@ -14,6 +14,8 @@
     "podcast": "node sync-podcast.js",
     "podcast:dry": "node sync-podcast.js --dry-run --report podcast-report.csv",
     "transcripts": "node import-transcripts.js",
-    "transcripts:dry": "node import-transcripts.js --dry-run"
+    "transcripts:dry": "node import-transcripts.js --dry-run",
+    "all": "node sync-all.js",
+    "all:dry": "node sync-all.js --dry-run"
   }
 }

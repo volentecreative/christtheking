@@ -268,6 +268,47 @@ To re-run speaker/series matching after adding to those collections, use
 
 ---
 
+## Everything at once (`sync-all.js`)
+
+One command, run from a machine YouTube will talk to — a Mac on a residential
+IP, not a cloud runner. That is the whole reason it exists: on GitHub Actions
+the first two steps are degraded by the bot check, and here they are not.
+
+```bash
+npm run all -- --captions ~/ctk-captions --dry-run   # preview everything
+npm run all -- --captions ~/ctk-captions             # do it
+npm run all                                          # no local captions
+```
+
+It runs the three scripts in order and prints a combined verdict:
+
+| | |
+|---|---|
+| 1. `sync-youtube.js` | everything YouTube will hand over |
+| 2. `import-transcripts.js` | local `.vtt` files for the transcripts it wouldn't |
+| 3. `sync-podcast.js` | audio and platform links from the podcast feeds |
+
+**The order is the point.** `import-transcripts` marks an item synced — correct
+on its own, since it stops `sync-youtube` re-fetching a video it cannot fetch —
+but it also means `sync-youtube` will then skip that item entirely. Import first
+and you get transcripts and permanently lose descriptions. Sync first and it
+takes everything YouTube offers, transcripts included; the import becomes a
+mop-up for whatever failed. Same files, same commands, strictly more data.
+
+`--dry-run`, `--verbose` and `--force` pass through to every step.
+`--skip-podcast` drops step 3. Anything after `--` goes to `sync-youtube.js`
+alone:
+
+```bash
+node sync-all.js --captions ~/caps -- --max-work 25 --concurrency 2
+```
+
+Exit codes: `0` every step clean · `1` a step reported a real failure · `2` a
+step hit a config or setup problem, in which case the later steps are **skipped**
+rather than made to hit the same wall three times.
+
+---
+
 ## Transcripts from local .vtt files (`import-transcripts.js`)
 
 Transcripts are the one field a GitHub runner can never supply: captions come
