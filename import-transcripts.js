@@ -34,7 +34,7 @@
  * Files that match nothing are reported, not fatal — pass --strict to change that.
  */
 
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, statSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -101,12 +101,46 @@ function loadConfig() {
   };
 }
 
-/** Every .vtt under a directory. Recursive, because yt-dlp may have nested them. */
+/**
+ * Every .vtt under a directory. Recursive, because yt-dlp may have nested them.
+ *
+ * Written to survive being pointed at somewhere broad — a home directory, say.
+ * A directory it cannot read is skipped rather than fatal: macOS restricts
+ * plenty of them, and one EACCES three levels down should not lose the caption
+ * files sitting in plain sight next to it.
+ *
+ * Dot-directories are skipped outright. ~/.Trash is the one that matters — a
+ * deleted transcript should stay deleted — and it saves walking .git and the
+ * like on the way.
+ */
 function findVttFiles(root) {
   const found = [];
+  const seen = new Set();
 
   const walk = (dir) => {
-    for (const entry of readdirSync(dir)) {
+    // Symlinked directories can loop. Resolving each to its real path and
+    // visiting once means a link back up the tree ends the walk instead of
+    // recursing until the stack gives out.
+    let real;
+    try {
+      real = realpathSync(dir);
+    } catch {
+      return;
+    }
+    if (seen.has(real)) return;
+    seen.add(real);
+
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return; // unreadable directory — skip it, keep the rest of the scan
+    }
+
+    for (const entry of entries) {
+      if (entry.startsWith('.')) continue;
+      if (entry === 'node_modules') continue;
+
       const path = join(dir, entry);
       let stats;
       try {
