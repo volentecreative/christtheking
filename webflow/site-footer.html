@@ -74,35 +74,32 @@
 </script>
 
 <style>
-/* Nav dropdown open/close, in place of the deleted Interactions.
+/* Nav dropdown open, in place of the deleted Interactions.
 
-   Webflow keeps its own plumbing: its dropdown JS still toggles w--open on the
-   toggle and the list, and this is only the styling of those two states. What
-   it has to undo is `.w-dropdown-list { display: none }` — display cannot
-   transition, which is why an Interaction was needed in the first place. With
-   the list always rendered, opacity carries both directions, and the close
-   animates as well as the open.
+   Webflow's dropdown JS is left entirely alone: it toggles w--open, and its
+   own `.w-dropdown-list { display: none }` still hides the closed list. An
+   animation, unlike a transition, runs on an element that has just appeared,
+   so the fade needs nothing hidden-but-rendered and the closed list stays out
+   of the tab order for free.
 
-   It is here rather than in the Designer because the closed state needs
-   `visibility: hidden` to keep the links out of the tab order, and the style
-   panel has no visibility property. The delayed visibility is what lets the
-   fade finish before the list stops being rendered.
+   An earlier version did override display, so the list could fade out as well
+   as in. That exposed something the instant hide had been covering: on close
+   the box shifts left before it fades. Something differs in the list's
+   geometry between the open and closed states — a Designer style on the
+   dropdown's Open state, or a position Webflow's own JS applies while open —
+   and until that is found, the close stays instant, as it was under the
+   Interaction-less default.
 
    Desktop only. Below 992px the list is `position: static` inside the mobile
-   panel, where forcing display:block would leave every dropdown's links taking
-   up space while closed; there Webflow's own show/hide is left alone. */
-@media (min-width: 992px) {
-  .nav_dropdown-list.w-dropdown-list {
-    display: block;
-    visibility: hidden;
-    opacity: 0;
-    transition: opacity 200ms ease, visibility 0s linear 200ms;
-  }
+   panel and Webflow's show/hide is what that layout expects. */
+@keyframes ctk-dropdown-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
+@media (min-width: 992px) {
   .nav_dropdown-list.w-dropdown-list.w--open {
-    visibility: visible;
-    opacity: 1;
-    transition-delay: 0s;
+    animation: ctk-dropdown-in 200ms ease both;
   }
 
   .navbar_dropdown-toggle .chevron_down {
@@ -115,10 +112,47 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav_dropdown-list.w-dropdown-list,
-  .navbar_dropdown-toggle .chevron_down {
-    transition: none;
+  .nav_dropdown-list.w-dropdown-list.w--open { animation: none; }
+  .navbar_dropdown-toggle .chevron_down { transition: none; }
+}
+</style>
+
+<style>
+/* Mobile menu: the hamburger becomes a close icon, and the dim takes taps.
+
+   Both halves are narthex's doing — it puts its open class on the toggle and
+   on the vci-nav="dim" element alongside the menu, and a click on the dim
+   closes the menu with no code here. All that is left is what the Designer's
+   style panel cannot say: pointer-events, and a descendant selector for the
+   two bars.
+
+   The bars are 3px tall with a 0.5rem gap, so half the distance between their
+   centres is 0.25rem + 1.5px — that is what each has to travel to meet in the
+   middle before rotating. */
+[vci-nav="dim"] {
+  pointer-events: none;
+}
+
+[vci-nav="dim"].is-open {
+  pointer-events: auto;
+}
+
+@media (max-width: 991px) {
+  .navbar_hamburger_line {
+    transition: transform 300ms ease;
   }
+
+  .navbar_hamburger.is-open .navbar_hamburger_line:first-child {
+    transform: translateY(calc(0.25rem + 1.5px)) rotate(45deg);
+  }
+
+  .navbar_hamburger.is-open .navbar_hamburger_line:last-child {
+    transform: translateY(calc(-0.25rem - 1.5px)) rotate(-45deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar_hamburger_line { transition: none; }
 }
 </style>
 

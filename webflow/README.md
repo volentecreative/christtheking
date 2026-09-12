@@ -161,16 +161,31 @@ half of the story above.
 - **Parallax keyframes** — presentation, not state.
 - **Turnstile hiding rule** — one form, one site.
 - **Theme switcher** — still commented out, left exactly as it was.
-- **Nav dropdown open/close** — the Interactions that animated the three
-  dropdowns were deleted in the Designer on 2026-09-12, which left them
-  popping in and out. The replacement is CSS on Webflow's own `w--open`, in
-  the footer: Webflow's dropdown JS still does the toggling, and all the CSS
-  undoes is `.w-dropdown-list { display: none }`, which is what made an
-  Interaction necessary — `display` cannot transition. Desktop only; below
-  992px the list is `position: static` inside the mobile panel, so Webflow's
-  show/hide is left alone there. It is code rather than Designer styles
-  because the closed state wants `visibility: hidden` to keep the links out
-  of the tab order, and the style panel has no visibility property.
+- **Nav dropdown open** — the Interactions that animated the three dropdowns
+  were deleted in the Designer on 2026-09-12, which left them popping in.
+  The replacement is a keyframe fade on Webflow's own `w--open`: its dropdown
+  JS still does the toggling and its own `display: none` still hides the
+  closed list, so nothing is rendered-but-hidden and the closed links stay out
+  of the tab order. Desktop only. **The close is deliberately instant** — see
+  below.
+- **Mobile menu close icon and dim** — narthex puts its open class on the
+  toggle and on the `vci-nav="dim"` element, and closes the menu when the dim
+  is clicked; the footer holds only what the style panel cannot say,
+  `pointer-events` and a descendant selector that folds the two hamburger bars
+  into an X.
+
+### One loose end: the dropdown cannot fade out
+
+A first version overrode `display` so the list stayed rendered and could fade
+both ways. It worked, and it uncovered something the instant hide had been
+hiding: **on close the list shifts left before it fades.** Its geometry differs
+between the open and closed states — a Designer style on the dropdown's Open
+state, or a position Webflow's own JS applies while open, are the two
+candidates; the Data API cannot read a dropdown's Open state, so neither is
+confirmed. Until it is, the close is instant, exactly as it is with no
+Interaction and no CSS. To pick it up again: open a dropdown on desktop,
+compare the list's box in the Open state against its base state in the style
+panel, and look for an inline `style` Webflow adds while it is open.
 
 Untouched and still registered scripts: `navbarSpeakerNames`,
 `LivestreamResolver`, `Theme Logo Swap CSS`.
@@ -186,7 +201,7 @@ doc lists every one; the short version:
 | `nav.navbar` (navbar component root) | `vci-nav="header"`, `vci-nav-height-var="--nav-height"`, `vci-nav-key="main"` |
 | `.navbar_menu` | `vci-nav="menu"` |
 | `.navbar_hamburger` | `vci-nav="toggle"` |
-| a new full-page backdrop div, if wanted | `vci-nav="dim"`, `vci-nav-key="main"` — optional, none exists today |
+| `.navbar_dim` — a backdrop div, first child of `nav.navbar` so the panel paints over it. Added 2026-09-12 | `vci-nav="dim"`, `vci-nav-key="main"` |
 | `modal` component root | `vci-modal="dialog"` — no key needed, see below |
 | every `data-modal-open` trigger | `vci-modal="open"` + `vci-modal-key="<key>"` |
 | `a.modal_close` | `vci-modal="close"` |
@@ -244,3 +259,12 @@ so this does not have to be a big-bang swap:
 3. Delete the old block for that behaviour only once its hooks are all moved.
 4. `faq_accordion_toggle` must be removed from applied scripts the moment the
    accordion roles go on — that one *would* double-toggle.
+
+**And it must stay removed.** It came back on 2026-09-12 at 14:37, in the same
+write that registered `navbarSpeakerNames` 1.2.0 — which is what saving the
+Designer's custom-code panel does: it writes the whole applied list, so a panel
+opened before the script was removed puts it back. Both engines then toggle
+each FAQ row on one click and they cancel out: the rows open and will not
+close. That is what happened on Sundays. If it reappears, remove it again
+rather than reaching for the accordion CSS; deleting the registered script
+outright is the only way to make it unrepeatable, and that is irreversible.
