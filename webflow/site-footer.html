@@ -75,47 +75,61 @@
 </script>
 
 <style>
-/* Nav dropdown open, in place of the deleted Interactions.
+/* Nav dropdowns opening AND closing, in place of the deleted Interactions.
 
-   Webflow's dropdown JS is left entirely alone: it toggles w--open, and its
-   own `.w-dropdown-list { display: none }` still hides the closed list. An
-   animation, unlike a transition, runs on an element that has just appeared,
-   so the fade needs nothing hidden-but-rendered and the closed list stays out
-   of the tab order for free.
+   Webflow's dropdown JS is left alone: it toggles w--open and nothing else.
+   What made the close instant is its `.w-dropdown-list { display: none }` —
+   the element stops being rendered the moment the class comes off, so there
+   is nothing left to animate. `transition-behavior: allow-discrete` is the
+   answer: display still flips, but not until the rest of the transition has
+   finished, so the list is on screen for the whole way out.
 
-   An earlier version did override display, so the list could fade out as well
-   as in. That exposed something the instant hide had been covering: on close
-   the box shifts left before it fades. Something differs in the list's
-   geometry between the open and closed states — a Designer style on the
-   dropdown's Open state, or a position Webflow's own JS applies while open —
-   and until that is found, the close stays instant, as it was under the
-   Interaction-less default.
-
-   On desktop it is a fade. Below 992px the list is `position: static` in the
-   flow of the mobile panel, where the same appearance has to be a slide. */
-@keyframes ctk-dropdown-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-/* The 0fr → 1fr grid row is the one way to animate to a height nobody has
-   measured. Only `from` is written: what it does not name — the padding and
-   border the Designer puts on the list — interpolates from these zeros to
-   whatever the element actually computes, so no Designer value is copied into
-   this file to drift out of date. */
-@keyframes ctk-dropdown-down {
-  from {
-    grid-template-rows: 0fr;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-top-width: 0;
-    border-bottom-width: 0;
-  }
-}
-
+   Desktop fades. Below 992px the list is `position: static` in the flow of the
+   mobile panel, where the same appearance has to be a slide: a 0fr → 1fr grid
+   row animates to a height nobody has measured. The collapsed values sit on
+   :not(.w--open) so the open state says nothing about padding or border, and
+   the Designer's own values are what it animates back to — nothing from the
+   style panel is copied into this file to drift out of date. */
 @media (min-width: 992px) {
+  .nav_dropdown-list.w-dropdown-list {
+    opacity: 0;
+    transition: opacity 200ms ease-out, display 200ms allow-discrete;
+  }
+
   .nav_dropdown-list.w-dropdown-list.w--open {
-    animation: ctk-dropdown-in 200ms ease-out both;
+    opacity: 1;
+  }
+
+  @starting-style {
+    .nav_dropdown-list.w-dropdown-list.w--open { opacity: 0; }
+  }
+
+  /* Why the box is pinned while open, with !important.
+
+     A first attempt at a close animation showed the list jumping left before
+     it faded. Nothing here moves it, and Webflow's own CSS differs between the
+     two states only in `display` — so something outside both is giving the
+     open list a different box: a Designer style on the dropdown's Open state
+     (which the Data API cannot read) or a position Webflow's JS sets inline.
+     Reproducing each in Chromium: both jump, a plain pin fixes the first, and
+     only !important fixes the inline one. So the open box is nailed to the
+     Designer's base geometry, which is where it renders today.
+
+     The cost: styling a dropdown's Open position in the Designer will not take
+     effect until these are removed. Change them here instead. */
+  .nav_dropdown-list.w-dropdown-list.w--open {
+    top: 100% !important;
+    bottom: auto !important;
+    right: 0 !important;
+    transform: none !important;
+  }
+
+  .nav_dropdown-list.w-dropdown-list.w--open:not(.mega) {
+    left: auto !important;
+  }
+
+  .nav_dropdown-list.mega.w-dropdown-list.w--open {
+    left: 0 !important;
   }
 
   .navbar_dropdown-toggle .chevron_down {
@@ -128,21 +142,46 @@
 }
 
 @media (max-width: 991px) {
+  .nav_dropdown-list.w-dropdown-list {
+    transition: grid-template-rows 200ms ease-out, padding 200ms ease-out,
+                border-width 200ms ease-out, display 200ms allow-discrete;
+  }
+
+  .nav_dropdown-list.w-dropdown-list:not(.w--open) {
+    grid-template-rows: 0fr;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+  }
+
   .nav_dropdown-list.w-dropdown-list.w--open {
     display: grid;
     grid-template-rows: 1fr;
-    animation: ctk-dropdown-down 200ms ease-out;
+  }
+
+  /* Coming out of display:none there is no before-state to transition from,
+     so the opening slide needs its start written out. Only zeros here — the
+     end of the slide is still whatever the Designer computes. */
+  @starting-style {
+    .nav_dropdown-list.w-dropdown-list.w--open {
+      grid-template-rows: 0fr;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-top-width: 0;
+      border-bottom-width: 0;
+    }
   }
 
   /* A row can only collapse if what sits in it may be clipped. */
-  .nav_dropdown-list.w-dropdown-list.w--open > * {
+  .nav_dropdown-list.w-dropdown-list > * {
     overflow: hidden;
     min-height: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav_dropdown-list.w-dropdown-list.w--open { animation: none; }
+  .nav_dropdown-list.w-dropdown-list { transition: none; }
   .navbar_dropdown-toggle .chevron_down { transition: none; }
 }
 </style>
