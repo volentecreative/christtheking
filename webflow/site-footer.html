@@ -74,6 +74,57 @@
 </script>
 
 <style>
+/* Nav dropdown open/close, in place of the deleted Interactions.
+
+   Webflow keeps its own plumbing: its dropdown JS still toggles w--open on the
+   toggle and the list, and this is only the styling of those two states. What
+   it has to undo is `.w-dropdown-list { display: none }` — display cannot
+   transition, which is why an Interaction was needed in the first place. With
+   the list always rendered, opacity and transform carry both directions, and
+   the close animates as well as the open.
+
+   It is here rather than in the Designer because the closed state needs
+   `visibility: hidden` to keep the links out of the tab order, and the style
+   panel has no visibility property. The delayed visibility is what lets the
+   fade finish before the list stops being rendered.
+
+   Desktop only. Below 992px the list is `position: static` inside the mobile
+   panel, where forcing display:block would leave every dropdown's links taking
+   up space while closed; there Webflow's own show/hide is left alone. */
+@media (min-width: 992px) {
+  .nav_dropdown-list.w-dropdown-list {
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-0.5rem);
+    transition: opacity 200ms ease, transform 200ms ease, visibility 0s linear 200ms;
+  }
+
+  .nav_dropdown-list.w-dropdown-list.w--open {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    transition-delay: 0s;
+  }
+
+  .navbar_dropdown-toggle .chevron_down {
+    transition: transform 200ms ease;
+  }
+
+  .navbar_dropdown-toggle.w--open .chevron_down {
+    transform: rotate(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav_dropdown-list.w-dropdown-list,
+  .navbar_dropdown-toggle .chevron_down {
+    transition: none;
+  }
+}
+</style>
+
+<style>
 /* The Turnstile widget's wrapper div, hidden without removing it from the form.
    The closing brace was missing in the live block — browsers recover at the end
    of a stylesheet, so it worked, but nothing may be appended after it. */
