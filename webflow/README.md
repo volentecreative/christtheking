@@ -161,6 +161,16 @@ half of the story above.
 - **Parallax keyframes** — presentation, not state.
 - **Turnstile hiding rule** — one form, one site.
 - **Theme switcher** — still commented out, left exactly as it was.
+- **Nav dropdown open/close** — the Interactions that animated the three
+  dropdowns were deleted in the Designer on 2026-09-12, which left them
+  popping in and out. The replacement is CSS on Webflow's own `w--open`, in
+  the footer: Webflow's dropdown JS still does the toggling, and all the CSS
+  undoes is `.w-dropdown-list { display: none }`, which is what made an
+  Interaction necessary — `display` cannot transition. Desktop only; below
+  992px the list is `position: static` inside the mobile panel, so Webflow's
+  show/hide is left alone there. It is code rather than Designer styles
+  because the closed state wants `visibility: hidden` to keep the links out
+  of the tab order, and the style panel has no visibility property.
 
 Untouched and still registered scripts: `navbarSpeakerNames`,
 `LivestreamResolver`, `Theme Logo Swap CSS`.
