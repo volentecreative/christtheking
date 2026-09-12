@@ -160,11 +160,20 @@
    centres is 0.25rem + 1.5px — that is what each has to travel to meet in the
    middle before rotating.
 
-   The dim's own geometry is in the Designer, and its `top` at the medium
-   breakpoint is narthex's `--nav-offset`: the header's live bottom edge in the
-   viewport, which drops as the announcement bar scrolls away. A fixed number
-   cannot work — 6rem sits 42px above the header's bottom edge while the bar is
-   still on screen, which is the dim creeping over the header. */
+   The dim's own geometry is in the Designer. Two values there are load-bearing
+   and easy to lose:
+
+     top at medium = var(--nav-offset, 6rem), narthex's live measurement of the
+       header's bottom edge, which drops as the announcement bar scrolls away.
+       A fixed number cannot work — 6rem sits 42px above that edge while the
+       bar is still on screen, which is the dim creeping over the header.
+
+     z-index: -1, which keeps the dim behind the panel no matter where it sits
+       in nav.navbar. Without it the dim only stays behind while it is the
+       first child, and a backdrop that paints last covers the menu, its
+       dropdowns and every link in it — the whole panel stops taking taps. It
+       still catches taps below the panel, which is what closes the menu: the
+       negative index is below the header's own content, not below the page. */
 [vci-nav="dim"] {
   pointer-events: none;
 }
