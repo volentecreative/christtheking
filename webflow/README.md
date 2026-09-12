@@ -14,6 +14,53 @@ Both are the **post-migration** state: the shared behaviour has moved to
 [narthex](https://github.com/volentecreative/narthex), and what is left here is
 the part that is genuinely this site's own.
 
+## Why the mobile menu does not open (2026-09-12)
+
+The Designer half of the migration is live. The code half never landed, and two
+things are in the way — the first is enough on its own:
+
+1. **The narthex tag is not on the site.** Site settings → Custom code still
+   holds the pre-migration Head and Footer verbatim — the `.navbar` height
+   measurer, the jump-link handler, the ~200-line modal IIFE — and no
+   `<script src="…narthex…">` anywhere. The attributes below it are applied and
+   published (`vci-nav="header"` on `nav.navbar`, `"menu"` on `.navbar_menu`,
+   `"toggle"` on `.navbar_hamburger`), so the markup is asking for a nav module
+   that never arrives, and nothing toggles `.navbar_menu.is-open`.
+2. **The version pinned here did not exist.** `site-footer.html` asked for
+   `narthex@v0.2.0`, copied from the example in the narthex README's release
+   section — a tag that was never cut (the repo has v0.1.0, v0.1.1, v0.4.0,
+   v0.5.0, v0.5.1). Pasting the footer as it stood would have swapped one dead
+   menu for another: jsDelivr 404s an unknown tag, and the page carries on
+   without narthex. Now pinned to `v0.5.1`, whose nav roles and settings are
+   the ones this site's attributes already use.
+
+It reads as a touch-device bug because the hamburger is the only way in and it
+only exists there: `.navbar_hamburger` is `display: none` at base and
+`display: flex` from `medium` down. There is nothing to click on a desktop, so
+the only report comes from a phone.
+
+Checked against the site's own markup and styles, as the Data API reports them
+today, in Chromium at 390 × 844 with touch emulation: with no script tag and
+with the 404 tag, a tap leaves the menu at `max-height: 0`; with narthex
+loading, the same tap adds `is-open` and the menu opens.
+
+### To make it live
+
+1. Paste `site-head.html` into Head and `site-footer.html` into Footer,
+   replacing what is there.
+2. Remove `faq_accordion_toggle` from the site's applied scripts in the same
+   pass. The accordion roles are already on the FAQ elements, so it and
+   narthex would both toggle every row.
+3. Publish, then check the hamburger on a phone.
+
+**Worth one line in the Designer while you are there:** `.navbar_hamburger` has
+no `cursor: pointer`. iOS Safari uses that property, among a short list, to
+decide whether a bare `<div>` is "clickable", and a tap on an element it judges
+unclickable is not delivered to a document-level click handler — which is how
+narthex listens. Chromium's touch emulation does not model the rule, so it
+cannot be proven here; the property costs nothing (the hamburger is hidden on
+desktop) and removes the question.
+
 ## What moved to narthex
 
 narthex is Volente's attribute-driven utility library for Webflow — one script,
@@ -100,7 +147,8 @@ code, and neither applied registered script is a menu toggle.
 
 narthex's default menu class is `is-open`, so `vci-nav="toggle"` + `vci-nav="menu"`
 connect the two ends with no new styles. The menu starts working the moment the
-footer script tag lands.
+footer script tag lands — pointing at a tag that exists, which is the second
+half of the story above.
 
 ## What stays here
 

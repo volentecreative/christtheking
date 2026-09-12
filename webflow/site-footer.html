@@ -11,7 +11,12 @@
      What is left is presentation, and stays: the parallax keyframes and the
      Turnstile hiding rule. -->
 
-<script src="https://cdn.jsdelivr.net/gh/volentecreative/narthex@v0.2.0/dist/narthex.min.js"
+<!-- Pin a tag that exists. jsDelivr resolves @<tag> against the repo's git
+     tags and 404s anything else — silently, as far as the page is concerned:
+     no narthex, so no mobile menu. v0.2.0 was the example version in the
+     narthex README's release section and was never cut; the tags are v0.1.0,
+     v0.1.1, v0.4.0, v0.5.0, v0.5.1. -->
+<script src="https://cdn.jsdelivr.net/gh/volentecreative/narthex@v0.5.1/dist/narthex.min.js"
         vci-scroll="native"
         vci-scroll-offset="calc(var(--nav-height, 4.5rem) + 1.5rem)"></script>
 
