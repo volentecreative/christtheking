@@ -1,0 +1,41 @@
+<!doctype html><html><body>
+<!-- hidden source list: one item per Media item, nested Speaker(s) list -->
+<div style="display:none">
+  <div class="w-dyn-item" data-speaker-source>
+    <div data-speaker-key>the-fear-of-the-lord</div>
+    <div data-speaker-title>The Fear of the Lord</div>
+    <div data-speaker-name>Nathan Colestock</div>
+  </div>
+  <div class="w-dyn-item" data-speaker-source>
+    <div data-speaker-key>union-with-christ</div>
+    <div data-speaker-title>Union with Christ</div>
+    <div data-speaker-name>Andy Naselli</div>
+    <div data-speaker-name>Clint Manley</div>
+  </div>
+  <div class="w-dyn-item" data-speaker-source>
+    <div data-speaker-key>no-speaker-assigned</div>
+    <div data-speaker-title>No Speaker Assigned</div>
+  </div>
+</div>
+
+<!-- media-card component instances, as Webflow renders them -->
+<div class="sermons_list" fs-list-element="list">
+  <div class="w-dyn-item">
+    <a class="media-card" href="/media/the-fear-of-the-lord">
+      <div class="media-card-content">
+        <div data-media-title fs-list-field="title">The Fear of the Lord</div>
+        <div class="media-card-speaker" data-speakers-target fs-list-field="speaker">[Speaker]</div>
+      </div>
+    </a>
+  </div>
+  <div class="w-dyn-item">
+    <a class="media-card" href="/media/no-speaker-assigned">
+      <div class="media-card-content">
+        <div data-media-title fs-list-field="title">No Speaker Assigned</div>
+        <div class="media-card-speaker" data-speakers-target fs-list-field="speaker">[Speaker]</div>
+      </div>
+    </a>
+  </div>
+</div>
+<script src="/navbar-speaker-names.js"></script>
+</body></html>

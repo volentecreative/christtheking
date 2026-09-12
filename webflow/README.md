@@ -9,6 +9,7 @@ in the Designer.
 | --- | --- |
 | `site-head.html` | Site settings → Custom code → **Head** |
 | `site-footer.html` | Site settings → Custom code → **Footer** |
+| `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 
 Both are the **post-migration** state: the shared behaviour has moved to
 [narthex](https://github.com/volentecreative/narthex), and what is left here is
@@ -110,8 +111,72 @@ footer script tag lands.
 - **Turnstile hiding rule** — one form, one site.
 - **Theme switcher** — still commented out, left exactly as it was.
 
-Untouched and still registered scripts: `navbarSpeakerNames`,
-`LivestreamResolver`, `Theme Logo Swap CSS`.
+Untouched and still registered scripts: `LivestreamResolver`,
+`Theme Logo Swap CSS`. `navbarSpeakerNames` is now tracked here — see below.
+
+## `navbarSpeakerNames` — filling the media card's speaker
+
+`speaker-s` on the Media collection is a **MultiReference**, and Webflow can
+only render a multi-reference through a nested Collection List. A Collection
+List cannot live inside a component. The media card *is* a component
+(`media-card`, used on `/media` and in the navbar's Learn mega menu), so the
+card ships the literal text `[Speaker]` and this script replaces it at runtime.
+
+The card cannot be the source of its own data, so the script keeps one page
+that renders the mapping — `/media`, in a hidden Collection List — and copies
+from it. On `/media` it harvests the local document; on any other page it
+fetches `/media` once and caches the result in `sessionStorage`.
+
+### The contract
+
+**Source** — a hidden Collection List on `/media`, over the **Media**
+collection, one entry per item:
+
+| Attribute | On | Bound to |
+| --- | --- | --- |
+| `data-speaker-source` | the item wrapper | — |
+| `data-speaker-key` | a text block inside it | Media → **Slug** |
+| `data-speaker-title` | a text block inside it | Media → **Name** |
+| `data-speaker-name` | a text block in a **nested** Collection List over Media → **Speaker(s)** | Contributor → **Name** |
+
+**Target** — on the `media-card` component, already applied:
+
+| Attribute | On | Meaning |
+| --- | --- | --- |
+| `data-speakers-target` | `.media-card-speaker` | where the names are written |
+| `data-media-title` | the title block | the fallback key |
+| `data-speakers-done` | — | set by the script once a card is filled |
+
+A card is matched on the slug in its own `href` first, falling back to its
+normalized title text. Slug is exact; the title fallback exists so a card whose
+link is not per-item still resolves.
+
+### Things that are easy to get wrong
+
+- **Hide the source list with `display: none`, not "delete".** Webflow's
+  *conditional visibility* would keep it out of the DOM entirely, and the
+  script reads the DOM.
+- **The source list needs a limit above the item count.** A Webflow Collection
+  List caps at 100 items per list; past that the tail of the library silently
+  stops resolving. There are ~92 media items today.
+- **An item with no speakers is left showing `[Speaker]`,** deliberately — a
+  missing source row is indistinguishable from a not-yet-loaded one, and
+  blanking it would hide the fact that `speaker-s` is empty in the CMS.
+- The script repaints on DOM mutation, so the cards Finsweet appends on
+  `/media` (`fs-list-load="infinite"`) get filled as they arrive.
+- An empty harvest is **never** cached. The 1.0.0 script cached `{}` and then
+  short-circuited on it for the rest of the session, so one bad load looked
+  like a permanent failure.
+
+### Tests
+
+`npm run test:browser` drives the real script in headless Chromium against
+fixtures shaped like the live markup (`test/speaker-names.test.mjs`). It needs
+Playwright; in a sandbox without npm network access, symlink a global install:
+
+```sh
+mkdir -p node_modules && ln -s "$(npm root -g)/playwright" node_modules/playwright
+```
 
 ## The Designer half
 
