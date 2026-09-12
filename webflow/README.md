@@ -131,10 +131,21 @@ List cannot live inside a component. The media card *is* a component
 (`media-card`, used on `/media` and in the navbar's Learn mega menu), so the
 card ships the literal text `[Speaker]` and this script replaces it at runtime.
 
-The card cannot be the source of its own data, so the script keeps one page
-that renders the mapping — `/media`, in a hidden Collection List — and copies
-from it. On `/media` it harvests the local document; on any other page it
-fetches `/media` once and caches the result in `sessionStorage`.
+The card cannot be the source of its own data, so the mapping is rendered once
+in a hidden Collection List and the script copies from it. It does not care
+where that list lives: it harvests the current page first, and only if the page
+has no source list does it fetch `/media` and cache the result in
+`sessionStorage` for the rest of the tab.
+
+**Put the source list on a page, not in a component.** Webflow allows a
+Collection List inside a component (the Learn mega menu has one) but not a
+Collection List *nested inside a Collection Item* inside a component — and the
+nested list over `Speaker(s)` is the whole mechanism. That is the same wall the
+media card hit. `/media` is the natural home; `detail_media` demonstrates the
+nested pattern working on a page. Putting it in the navbar to get it on every
+page is not needed anyway — the fetch-and-cache path already makes it global,
+at the cost of one request per tab instead of ~92 hidden items of HTML on every
+page.
 
 ### The contract
 

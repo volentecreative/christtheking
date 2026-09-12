@@ -15,6 +15,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url));
 const ROUTES = {
   '/media': ['text/html', read('./fixtures/media.html')],
   '/other': ['text/html', read('./fixtures/other.html')],
+  '/global': ['text/html', read('./fixtures/global-source.html')],
   '/navbar-speaker-names.js': [
     'application/javascript',
     read('../webflow/registered/navbar-speaker-names.js'),
@@ -131,5 +132,36 @@ test('an empty harvest is never cached, so a later view still recovers', async (
   await page.goto(`${base}/other`);
   await page.waitForSelector('[data-speakers-done]');
   assert.deepEqual(await speakers(page), ['Andy Naselli, Clint Manley']);
+  await context.close();
+});
+
+test('a source list on the current page is used without fetching /media', async () => {
+  const context = await browser.newContext();
+  const fetches = [];
+  await context.route('**/media', (route) => {
+    fetches.push(route.request().url());
+    route.continue();
+  });
+
+  // The source list lives in the navbar here, so it is present on every page.
+  const page = await context.newPage();
+  await page.goto(`${base}/global`);
+  await page.waitForSelector('[data-speakers-done]');
+  assert.deepEqual(await speakers(page), ['Andy Naselli, Clint Manley']);
+  assert.equal(fetches.length, 0, 'a local source means no cross-page fetch');
+  await context.close();
+});
+
+test('on the source page itself, no pointless fetch of itself', async () => {
+  const context = await browser.newContext();
+  const fetches = [];
+  await context.route('**/media', (route) => {
+    fetches.push(route.request().url());
+    route.continue();
+  });
+  const page = await context.newPage();
+  await page.goto(`${base}/media`);
+  await page.waitForSelector('[data-speakers-done]');
+  assert.equal(fetches.length, 1, 'only the navigation itself, no extra fetch');
   await context.close();
 });

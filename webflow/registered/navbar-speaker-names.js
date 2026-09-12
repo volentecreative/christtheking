@@ -23,9 +23,10 @@ try{sessionStorage.setItem(KEY,JSON.stringify(m));}catch(e){}return 1;}
 function run(){if(!D.querySelector('[data-speakers-target]'))return;
 new MutationObserver(function(){clearTimeout(t);t=setTimeout(paint,50);})
 .observe(D.body,{childList:true,subtree:true});
-if(location.pathname.replace(/\/+$/,'')===SRC){use(harvest(D));return;}
+if(use(harvest(D)))return;
 var c=null;try{c=sessionStorage.getItem(KEY);}catch(e){}
 if(c&&use(JSON.parse(c)))return;
+if(location.pathname.replace(/\/+$/,'')===SRC)return;
 fetch(SRC,{credentials:'same-origin'}).then(function(r){return r.ok?r.text():Promise.reject(0);})
 .then(function(h){use(harvest(new DOMParser().parseFromString(h,'text/html')));})
 .catch(function(){});}
