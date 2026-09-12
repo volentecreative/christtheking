@@ -176,6 +176,15 @@ Three fields have stricter rules:
   `speaker-s` is fill-only. It is written only when it has drifted, so a steady
   state produces no update. Never edit it by hand; edit `speaker-s`.
 
+  It is reconciled by **`reconcile-speakers.js`** (`npm run speakers`), not by
+  the YouTube sync. The derivation also runs inside both syncs, but they only
+  reach it for items they decided to process, and `sync-youtube`'s gate is
+  `needsWork()` — "does this item need a YouTube re-fetch?" — which every
+  already-synced item answers no to. Backfilling a derived field has nothing to
+  do with YouTube, so the reconcile pass walks every item instead. It hits no
+  YouTube endpoint, which is also why it is the one sync step besides the
+  podcast that is safe to automate on a cloud runner.
+
   It exists because Webflow cannot bind a multi-reference to a text element, and
   the media card is a component whose root is a **link** — so it can host
   neither the binding nor the nested Collection List a multi-reference needs.

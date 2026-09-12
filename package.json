@@ -14,6 +14,8 @@
     "test:browser": "node --test test/*.test.mjs",
     "podcast": "node sync-podcast.js",
     "podcast:dry": "node sync-podcast.js --dry-run --report podcast-report.csv",
+    "speakers": "node reconcile-speakers.js",
+    "speakers:dry": "node reconcile-speakers.js --dry-run --verbose",
     "transcripts": "node import-transcripts.js",
     "transcripts:dry": "node import-transcripts.js --dry-run",
     "all": "node sync-all.js",

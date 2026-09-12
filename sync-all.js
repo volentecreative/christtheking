@@ -6,9 +6,10 @@
  * most into Webflow for the least time spent against YouTube, and reports what
  * each one did.
  *
- *   1. sync-youtube.js      — everything YouTube will hand over
+ *   1. sync-youtube.js       — everything YouTube will hand over
  *   2. import-transcripts.js — local .vtt files for the transcripts it wouldn't
- *   3. sync-podcast.js      — audio and platform links from the podcast feeds
+ *   3. sync-podcast.js       — audio and platform links from the podcast feeds
+ *   4. reconcile-speakers.js — speaker-text, from whatever speaker-s ended up as
  *
  * THE ORDER IS THE POINT. import-transcripts marks an item synced, which is
  * correct on its own — it stops sync-youtube re-fetching a video it cannot
@@ -126,6 +127,15 @@ async function main() {
   if (options.podcast) {
     steps.push({ name: 'Podcast → Webflow', script: 'sync-podcast.js', args: [...shared] });
   }
+
+  // Last on purpose: the steps above can fill a blank speaker-s, and this
+  // reflects whatever they settled on. --force means nothing to it; it always
+  // reconciles, because a derived field that can drift is worthless.
+  steps.push({
+    name: 'Reconcile speaker text',
+    script: 'reconcile-speakers.js',
+    args: shared.filter((a) => a !== '--force'),
+  });
 
   const results = [];
 
