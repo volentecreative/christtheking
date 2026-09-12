@@ -11,6 +11,7 @@
     "sync": "node sync-youtube.js",
     "dry-run": "node sync-youtube.js --dry-run",
     "test": "node --test test/*.test.js",
+    "test:browser": "node --test test/*.test.mjs",
     "podcast": "node sync-podcast.js",
     "podcast:dry": "node sync-podcast.js --dry-run --report podcast-report.csv",
     "transcripts": "node import-transcripts.js",

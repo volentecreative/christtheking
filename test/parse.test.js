@@ -5,6 +5,7 @@ import {
   buildFieldData,
   buildPlaceholderFieldData,
   buildUpdatePatch,
+  speakerText,
   classifyType,
   cuesToRichText,
   descriptionToRichText,
@@ -792,4 +793,102 @@ test('buildFieldData normalizes the name but reads scripture from the raw title'
   );
   assert.equal(data.name, 'What Shepherds Do');
   assert.equal(data['scripture-raw'], '1 Timothy 3:1');
+});
+
+/* ------------------------------------------------------------------ *
+ * speaker-text — the card's rendering of the speaker-s multi-reference
+ * ------------------------------------------------------------------ */
+
+const SPEAKER_RECORDS = [
+  { id: 'sp-andy', name: 'Andy Naselli' },
+  { id: 'sp-clint', name: 'Clint Manley' },
+];
+
+test('speakerText joins names in the order the ids are given', () => {
+  assert.equal(
+    speakerText(['sp-clint', 'sp-andy'], SPEAKER_RECORDS),
+    'Clint Manley, Andy Naselli'
+  );
+});
+
+test('speakerText drops ids with no matching Speaker record', () => {
+  assert.equal(speakerText(['sp-andy', 'sp-ghost'], SPEAKER_RECORDS), 'Andy Naselli');
+  assert.equal(speakerText(['sp-ghost'], SPEAKER_RECORDS), '');
+});
+
+test('speakerText tolerates nothing at all', () => {
+  assert.equal(speakerText([], SPEAKER_RECORDS), '');
+  assert.equal(speakerText(null, SPEAKER_RECORDS), '');
+  assert.equal(speakerText(['sp-andy'], []), '');
+});
+
+test('a blank speaker-text is filled from the speaker this run matched', () => {
+  const { patch } = buildUpdatePatch(
+    { 'speaker-s': ['sp-andy'], 'speaker-text': 'Andy Naselli' },
+    { 'speaker-s': [], 'speaker-text': '' },
+    { speakers: SPEAKER_RECORDS }
+  );
+  assert.equal(patch['speaker-text'], 'Andy Naselli');
+});
+
+test('speaker-text follows the speaker a human assigned, not the fresh match', () => {
+  // speaker-s is fill-only: Clint stays. The text must agree with Clint.
+  const { patch } = buildUpdatePatch(
+    { 'speaker-s': ['sp-andy'], 'speaker-text': 'Andy Naselli' },
+    { 'speaker-s': ['sp-clint'], 'speaker-text': '' },
+    { speakers: SPEAKER_RECORDS }
+  );
+  assert.equal(patch['speaker-text'], 'Clint Manley');
+  assert.equal(patch['speaker-s'], undefined, 'the hand-set speaker is untouched');
+});
+
+test('a speaker-text that already agrees is left alone', () => {
+  const { patch, changed } = buildUpdatePatch(
+    { 'speaker-s': ['sp-andy'], 'speaker-text': 'Andy Naselli', 'last-synced': 'now' },
+    { 'speaker-s': ['sp-andy'], 'speaker-text': 'Andy Naselli' },
+    { speakers: SPEAKER_RECORDS }
+  );
+  assert.equal('speaker-text' in patch, false, 'a steady state must not write every run');
+  assert.equal(changed, false);
+});
+
+test('a stale speaker-text is corrected even without --force', () => {
+  const { patch, changedFields } = buildUpdatePatch(
+    { 'speaker-s': ['sp-andy'], 'speaker-text': 'Andy Naselli' },
+    { 'speaker-s': ['sp-clint'], 'speaker-text': 'Someone Else Entirely' },
+    { speakers: SPEAKER_RECORDS }
+  );
+  assert.equal(patch['speaker-text'], 'Clint Manley');
+  assert.deepEqual(changedFields, ['speaker-text']);
+});
+
+test('clearing speaker-s clears the text with it', () => {
+  const { patch } = buildUpdatePatch(
+    { 'speaker-s': [], 'speaker-text': '' },
+    { 'speaker-s': [], 'speaker-text': 'Andy Naselli' },
+    { speakers: SPEAKER_RECORDS }
+  );
+  assert.equal(patch['speaker-text'], '', 'a removed speaker must not leave its name behind');
+});
+
+test('without the speaker records, speaker-text is left untouched entirely', () => {
+  const { patch } = buildUpdatePatch(
+    { 'speaker-s': ['sp-andy'], 'speaker-text': 'Andy Naselli' },
+    { 'speaker-s': [], 'speaker-text': '' }
+  );
+  assert.equal('speaker-text' in patch, false);
+});
+
+test('buildFieldData derives speaker-text from the speakers it matched', () => {
+  const data = buildFieldData(
+    {
+      id: 'abcdefghijk',
+      title: 'Union with Christ',
+      duration: 2400,
+      description: 'Preached by Andy Naselli.',
+    },
+    { transcriptHtml: '', speakers: SPEAKER_RECORDS, series: [], now: '2026-01-01' }
+  );
+  assert.deepEqual(data['speaker-s'], ['sp-andy']);
+  assert.equal(data['speaker-text'], 'Andy Naselli');
 });
