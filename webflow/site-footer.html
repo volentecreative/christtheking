@@ -80,8 +80,8 @@
    toggle and the list, and this is only the styling of those two states. What
    it has to undo is `.w-dropdown-list { display: none }` — display cannot
    transition, which is why an Interaction was needed in the first place. With
-   the list always rendered, opacity and transform carry both directions, and
-   the close animates as well as the open.
+   the list always rendered, opacity carries both directions, and the close
+   animates as well as the open.
 
    It is here rather than in the Designer because the closed state needs
    `visibility: hidden` to keep the links out of the tab order, and the style
@@ -96,14 +96,12 @@
     display: block;
     visibility: hidden;
     opacity: 0;
-    transform: translateY(-0.5rem);
-    transition: opacity 200ms ease, transform 200ms ease, visibility 0s linear 200ms;
+    transition: opacity 200ms ease, visibility 0s linear 200ms;
   }
 
   .nav_dropdown-list.w-dropdown-list.w--open {
     visibility: visible;
     opacity: 1;
-    transform: none;
     transition-delay: 0s;
   }
 
