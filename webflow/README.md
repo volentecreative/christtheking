@@ -15,6 +15,15 @@ Both are the **post-migration** state: the shared behaviour has moved to
 [narthex](https://github.com/volentecreative/narthex), and what is left here is
 the part that is genuinely this site's own.
 
+> **Not yet applied to the live site.** Site settings → Custom code still holds
+> the pre-migration blocks: the nav-height measurer and `scroll-padding-top` in
+> the head, and the ~200-line modal/drawer IIFE in the footer. There is no
+> narthex `<script>` tag on the published site, so **every `vci-*` attribute in
+> the Designer is currently inert**, and the applied registered script
+> `faq_accordion_toggle` is what actually drives the FAQ accordions — removing
+> it before narthex is loaded would break them. Pasting these two files in is
+> the cutover, and it is one deliberate step, not housekeeping.
+
 ## What moved to narthex
 
 narthex is Volente's attribute-driven utility library for Webflow — one script,
