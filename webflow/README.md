@@ -44,22 +44,26 @@ today, in Chromium at 390 × 844 with touch emulation: with no script tag and
 with the 404 tag, a tap leaves the menu at `max-height: 0`; with narthex
 loading, the same tap adds `is-open` and the menu opens.
 
-### To make it live
+### Made live, 2026-09-12
 
-1. Paste `site-head.html` into Head and `site-footer.html` into Footer,
-   replacing what is there.
-2. Remove `faq_accordion_toggle` from the site's applied scripts in the same
-   pass. The accordion roles are already on the FAQ elements, so it and
-   narthex would both toggle every row.
-3. Publish, then check the hamburger on a phone.
+1. `site-head.html` into Head and `site-footer.html` into Footer, replacing the
+   pre-migration blocks. The site is now on the state this folder describes,
+   so the two are in step for the first time.
+2. `faq_accordion_toggle` removed from the site's applied scripts in the same
+   pass. The accordion roles were already on the FAQ elements, so it and
+   narthex would both have toggled every row. `navbarSpeakerNames` stays.
+3. `cursor: pointer` added to `.navbar_hamburger` in the Designer. iOS Safari
+   uses that property, among a short list, to decide whether a bare `<div>` is
+   "clickable", and a tap on an element it judges unclickable is not delivered
+   to a document-level click handler — which is how narthex listens. Chromium's
+   touch emulation does not model the rule, so it could not be proven here; the
+   property costs nothing (the hamburger is hidden on desktop) and removes the
+   question.
+4. Published to the Webflow subdomain — the site has no custom domain attached.
 
-**Worth one line in the Designer while you are there:** `.navbar_hamburger` has
-no `cursor: pointer`. iOS Safari uses that property, among a short list, to
-decide whether a bare `<div>` is "clickable", and a tap on an element it judges
-unclickable is not delivered to a document-level click handler — which is how
-narthex listens. Chromium's touch emulation does not model the rule, so it
-cannot be proven here; the property costs nothing (the hamburger is hidden on
-desktop) and removes the question.
+Worth walking on a phone: the hamburger, the FAQ rows, and a sticky-menu jump
+link (the scrollspy still runs from the Head, but the scrolling itself is
+`vci-scroll="native"` now).
 
 ## What moved to narthex
 
