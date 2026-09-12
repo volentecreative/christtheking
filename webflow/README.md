@@ -9,15 +9,17 @@ in the Designer.
 | --- | --- |
 | `site-head.html` | Site settings → Custom code → **Head** |
 | `site-footer.html` | Site settings → Custom code → **Footer** |
+| `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 
-Both are the **post-migration** state: the shared behaviour has moved to
-[narthex](https://github.com/volentecreative/narthex), and what is left here is
-the part that is genuinely this site's own.
+The two custom-code blocks are the **post-migration** state: the shared
+behaviour has moved to [narthex](https://github.com/volentecreative/narthex),
+and what is left here is the part that is genuinely this site's own. Since
+2026-09-12 that is also what the site serves — see below.
 
-## Why the mobile menu does not open (2026-09-12)
+## Why the mobile menu did not open (2026-09-12)
 
-The Designer half of the migration is live. The code half never landed, and two
-things are in the way — the first is enough on its own:
+The Designer half of the migration was live; the code half never landed. Two
+things were in the way — the first was enough on its own:
 
 1. **The narthex tag is not on the site.** Site settings → Custom code still
    holds the pre-migration Head and Footer verbatim — the `.navbar` height
@@ -187,8 +189,83 @@ Interaction and no CSS. To pick it up again: open a dropdown on desktop,
 compare the list's box in the Open state against its base state in the style
 panel, and look for an inline `style` Webflow adds while it is open.
 
-Untouched and still registered scripts: `navbarSpeakerNames`,
-`LivestreamResolver`, `Theme Logo Swap CSS`.
+Untouched and still registered scripts: `LivestreamResolver`,
+`Theme Logo Swap CSS`. `navbarSpeakerNames` is now tracked here — see below.
+
+## `navbarSpeakerNames` — filling the media card's speaker
+
+`speaker-s` on the Media collection is a **MultiReference**, and Webflow can
+only render a multi-reference through a nested Collection List. A Collection
+List cannot live inside a component. The media card *is* a component
+(`media-card`, used on `/media` and in the navbar's Learn mega menu), so the
+card ships the literal text `[Speaker]` and this script replaces it at runtime.
+
+The card cannot be the source of its own data, so the mapping is rendered once
+in a hidden Collection List and the script copies from it. It does not care
+where that list lives: it harvests the current page first, and only if the page
+has no source list does it fetch `/media` and cache the result in
+`sessionStorage` for the rest of the tab.
+
+**Put the source list on a page, not in a component.** Webflow allows a
+Collection List inside a component (the Learn mega menu has one) but not a
+Collection List *nested inside a Collection Item* inside a component — and the
+nested list over `Speaker(s)` is the whole mechanism. That is the same wall the
+media card hit. `/media` is the natural home; `detail_media` demonstrates the
+nested pattern working on a page. Putting it in the navbar to get it on every
+page is not needed anyway — the fetch-and-cache path already makes it global,
+at the cost of one request per tab instead of ~92 hidden items of HTML on every
+page.
+
+### The contract
+
+**Source** — a hidden Collection List on `/media`, over the **Media**
+collection, one entry per item:
+
+| Attribute | On | Bound to |
+| --- | --- | --- |
+| `data-speaker-source` | the item wrapper | — |
+| `data-speaker-key` | a text block inside it | Media → **Slug** |
+| `data-speaker-title` | a text block inside it | Media → **Name** |
+| `data-speaker-name` | a text block in a **nested** Collection List over Media → **Speaker(s)** | Contributor → **Name** |
+
+**Target** — on the `media-card` component, already applied:
+
+| Attribute | On | Meaning |
+| --- | --- | --- |
+| `data-speakers-target` | `.media-card-speaker` | where the names are written |
+| `data-media-title` | the title block | the fallback key |
+| `data-speakers-done` | — | set by the script once a card is filled |
+
+A card is matched on the slug in its own `href` first, falling back to its
+normalized title text. Slug is exact; the title fallback exists so a card whose
+link is not per-item still resolves.
+
+### Things that are easy to get wrong
+
+- **Hide the source list with `display: none`, not "delete".** Webflow's
+  *conditional visibility* would keep it out of the DOM entirely, and the
+  script reads the DOM.
+- **The source list needs a limit above the item count.** A Webflow Collection
+  List caps at 100 items per list; past that the tail of the library silently
+  stops resolving. There are ~92 media items today.
+- **An item with no speakers is left showing `[Speaker]`,** deliberately — a
+  missing source row is indistinguishable from a not-yet-loaded one, and
+  blanking it would hide the fact that `speaker-s` is empty in the CMS.
+- The script repaints on DOM mutation, so the cards Finsweet appends on
+  `/media` (`fs-list-load="infinite"`) get filled as they arrive.
+- An empty harvest is **never** cached. The 1.0.0 script cached `{}` and then
+  short-circuited on it for the rest of the session, so one bad load looked
+  like a permanent failure.
+
+### Tests
+
+`npm run test:browser` drives the real script in headless Chromium against
+fixtures shaped like the live markup (`test/speaker-names.test.mjs`). It needs
+Playwright; in a sandbox without npm network access, symlink a global install:
+
+```sh
+mkdir -p node_modules && ln -s "$(npm root -g)/playwright" node_modules/playwright
+```
 
 ## The Designer half
 

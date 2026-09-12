@@ -1,0 +1,70 @@
+# The automated half of the pipeline: everything that is a plain API call.
+#
+# Apple, Spotify and Webflow have no bot check, so they run fine on a cloud
+# runner — seconds per run. YouTube does NOT: it throttles and blocks
+# GitHub-hosted runner IPs, which is why sync-youtube.js is a separate,
+# manual-only workflow and why sync-all.js exists for running the whole thing
+# from a residential IP. See youtube-sync.yml for the evidence.
+#
+# So "one combined sync" is two jobs by necessity, not by choice:
+#   here          — podcast links + speaker-text reconcile, daily, unattended
+#   youtube-sync  — the YouTube fetch, by hand, from a machine YouTube answers
+name: Sync
+
+on:
+  schedule:
+    - cron: '0 15 * * *' # daily, 10am CT (15:00 UTC during CDT)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only - write nothing'
+        type: boolean
+        default: false
+      skip_podcast:
+        description: 'Reconcile speaker text only'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The unit suite needs no dependencies. The browser suite (*.test.mjs)
+      # is deliberately a separate glob so this stays Playwright-free.
+      - name: Run tests
+        run: node --test test/*.test.js
+
+      - name: Podcast → Webflow
+        if: ${{ !inputs.skip_podcast }}
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        run: node sync-podcast.js ${{ inputs.dry_run && '--dry-run' || '' }} --report podcast-report.csv --verbose
+
+      # Last, so it reflects any speaker-s the podcast step just filled.
+      # Runs even if the podcast step failed — the two are independent, and a
+      # drifted speaker-text is worth fixing either way.
+      - name: Reconcile speaker text
+        if: always()
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+        run: node reconcile-speakers.js ${{ inputs.dry_run && '--dry-run' || '' }} --verbose
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: podcast-report
+          path: podcast-report.csv
+          if-no-files-found: ignore

@@ -6,10 +6,11 @@
          .modal-dim, ?modal= deep links, swipe-to-dismiss)
          → the modal module, via vci-modal="dialog|open|close|dim|title"
      Also retired alongside it: the applied registered script
-     "faq_accordion_toggle" → the accordion module.
+     "faq_accordion_toggle" → the accordion module. It must stay retired: with
+     both engines applied, each FAQ row is toggled twice per click and will
+     not close.
 
-     What is left is presentation, and stays: the parallax keyframes and the
-     Turnstile hiding rule. -->
+     What is left is presentation, and stays. -->
 
 <!-- Pin a tag that exists. jsDelivr resolves @<tag> against the repo's git
      tags and 404s anything else — silently, as far as the page is concerned:

@@ -87,6 +87,7 @@ item, so **don't edit that field in the Designer.**
 | `transcript` | captions as `<p><a href="#t=…">m:ss</a> …</p>` |
 | `scripture-raw` | first reference found in the title, else description |
 | `speaker-s` | matched against the Speakers collection |
+| `speaker-text` | **derived** — `speaker-s` rendered as `"A, B"`, reconciled every run |
 | `series` | matched against existing Media Series |
 | `last-synced` | timestamp of the run |
 
@@ -169,6 +170,28 @@ Three fields have stricter rules:
 
 - **`type`** is written only when the item is created, and never again — not even
   by `--force`. Reclassify an exhortation by hand and it stays reclassified.
+- **`speaker-text`** is the exception to all of this: it is **derived**, not
+  filled. Every run rewrites it from whatever `speaker-s` actually is — the id
+  this run matched, or the one you assigned by hand, which wins because
+  `speaker-s` is fill-only. It is written only when it has drifted, so a steady
+  state produces no update. Never edit it by hand; edit `speaker-s`.
+
+  It is reconciled by **`reconcile-speakers.js`** (`npm run speakers`), not by
+  the YouTube sync. The derivation also runs inside both syncs, but they only
+  reach it for items they decided to process, and `sync-youtube`'s gate is
+  `needsWork()` — "does this item need a YouTube re-fetch?" — which every
+  already-synced item answers no to. Backfilling a derived field has nothing to
+  do with YouTube, so the reconcile pass walks every item instead. It hits no
+  YouTube endpoint, which is also why it is the one sync step besides the
+  podcast that is safe to automate on a cloud runner.
+
+  It exists because Webflow cannot bind a multi-reference to a text element, and
+  the media card is a component whose root is a **link** — so it can host
+  neither the binding nor the nested Collection List a multi-reference needs.
+  The card binds to this text field instead. The alternative, a hidden source
+  list scraped by JS, cannot work at all: a Webflow Collection List caps at 100
+  items and the Media collection holds more than that.
+
 - **`speaker-s`** and **`series`** are filled when the Webflow field is *empty*,
   and never overwritten — not even by `--force`. This is what makes the workflow
   work: add a missing speaker to the Speakers collection, re-run, and the items
