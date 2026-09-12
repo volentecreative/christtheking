@@ -28,6 +28,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { speakerText } from './lib/parse.js';
 import { matchEpisodes, parseAppleEpisodes, parseSpotifyEpisodes } from './lib/podcast.js';
 import { WebflowClient } from './lib/webflow.js';
 
@@ -301,6 +302,13 @@ async function main() {
         speakerNote = `MISSING SPEAKER RECORD: ${match.ep.speaker}`;
       }
     }
+
+    // speaker-text is the card's rendering of speaker-s, so it follows whatever
+    // speaker-s ends up as here — the id this run filled in, or the one already
+    // on the item. Written only when it has drifted.
+    const effectiveSpeakers = patch['speaker-s'] || data['speaker-s'];
+    const wantText = speakerText(effectiveSpeakers, speakers);
+    if (wantText !== (data['speaker-text'] || '')) patch['speaker-text'] = wantText;
 
     const action = Object.keys(patch).length ? Object.keys(patch).join(' ') : 'up to date';
     rows.push([
