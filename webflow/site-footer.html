@@ -6,11 +6,17 @@
          .modal-dim, ?modal= deep links, swipe-to-dismiss)
          → the modal module, via vci-modal="dialog|open|close|dim|title"
      Also retired alongside it: the applied registered script
-     "faq_accordion_toggle" → the accordion module.
+     "faq_accordion_toggle" → the accordion module. It must stay retired: with
+     both engines applied, each FAQ row is toggled twice per click and will
+     not close.
 
-     What is left is presentation, and stays: the parallax keyframes and the
-     Turnstile hiding rule. -->
+     What is left is presentation, and stays. -->
 
+<!-- Pin a tag that exists. jsDelivr resolves @<tag> against the repo's git
+     tags and 404s anything else — silently, as far as the page is concerned:
+     no narthex, so no mobile menu. v0.2.0 was the example version in the
+     narthex README's release section and was never cut; the tags are v0.1.0,
+     v0.1.1, v0.4.0, v0.5.0, v0.5.1. -->
 <script src="https://cdn.jsdelivr.net/gh/volentecreative/narthex@v0.5.1/dist/narthex.min.js"
         vci-scroll="native"
         vci-scroll-offset="calc(var(--nav-height, 4.5rem) + 1.5rem)"></script>
@@ -67,6 +73,89 @@
   document.head.appendChild(style);
 })();
 </script>
+
+<style>
+/* Nav dropdown open, in place of the deleted Interactions.
+
+   Webflow's dropdown JS is left entirely alone: it toggles w--open, and its
+   own `.w-dropdown-list { display: none }` still hides the closed list. An
+   animation, unlike a transition, runs on an element that has just appeared,
+   so the fade needs nothing hidden-but-rendered and the closed list stays out
+   of the tab order for free.
+
+   An earlier version did override display, so the list could fade out as well
+   as in. That exposed something the instant hide had been covering: on close
+   the box shifts left before it fades. Something differs in the list's
+   geometry between the open and closed states — a Designer style on the
+   dropdown's Open state, or a position Webflow's own JS applies while open —
+   and until that is found, the close stays instant, as it was under the
+   Interaction-less default.
+
+   Desktop only. Below 992px the list is `position: static` inside the mobile
+   panel and Webflow's show/hide is what that layout expects. */
+@keyframes ctk-dropdown-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (min-width: 992px) {
+  .nav_dropdown-list.w-dropdown-list.w--open {
+    animation: ctk-dropdown-in 200ms ease both;
+  }
+
+  .navbar_dropdown-toggle .chevron_down {
+    transition: transform 200ms ease;
+  }
+
+  .navbar_dropdown-toggle.w--open .chevron_down {
+    transform: rotate(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav_dropdown-list.w-dropdown-list.w--open { animation: none; }
+  .navbar_dropdown-toggle .chevron_down { transition: none; }
+}
+</style>
+
+<style>
+/* Mobile menu: the hamburger becomes a close icon, and the dim takes taps.
+
+   Both halves are narthex's doing — it puts its open class on the toggle and
+   on the vci-nav="dim" element alongside the menu, and a click on the dim
+   closes the menu with no code here. All that is left is what the Designer's
+   style panel cannot say: pointer-events, and a descendant selector for the
+   two bars.
+
+   The bars are 3px tall with a 0.5rem gap, so half the distance between their
+   centres is 0.25rem + 1.5px — that is what each has to travel to meet in the
+   middle before rotating. */
+[vci-nav="dim"] {
+  pointer-events: none;
+}
+
+[vci-nav="dim"].is-open {
+  pointer-events: auto;
+}
+
+@media (max-width: 991px) {
+  .navbar_hamburger_line {
+    transition: transform 300ms ease;
+  }
+
+  .navbar_hamburger.is-open .navbar_hamburger_line:first-child {
+    transform: translateY(calc(0.25rem + 1.5px)) rotate(45deg);
+  }
+
+  .navbar_hamburger.is-open .navbar_hamburger_line:last-child {
+    transform: translateY(calc(-0.25rem - 1.5px)) rotate(-45deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar_hamburger_line { transition: none; }
+}
+</style>
 
 <style>
 /* The Turnstile widget's wrapper div, hidden without removing it from the form.

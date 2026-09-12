@@ -11,18 +11,61 @@ in the Designer.
 | `site-footer.html` | Site settings → Custom code → **Footer** |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 
-Both are the **post-migration** state: the shared behaviour has moved to
-[narthex](https://github.com/volentecreative/narthex), and what is left here is
-the part that is genuinely this site's own.
+The two custom-code blocks are the **post-migration** state: the shared
+behaviour has moved to [narthex](https://github.com/volentecreative/narthex),
+and what is left here is the part that is genuinely this site's own. Since
+2026-09-12 that is also what the site serves — see below.
 
-> **Not yet applied to the live site.** Site settings → Custom code still holds
-> the pre-migration blocks: the nav-height measurer and `scroll-padding-top` in
-> the head, and the ~200-line modal/drawer IIFE in the footer. There is no
-> narthex `<script>` tag on the published site, so **every `vci-*` attribute in
-> the Designer is currently inert**, and the applied registered script
-> `faq_accordion_toggle` is what actually drives the FAQ accordions — removing
-> it before narthex is loaded would break them. Pasting these two files in is
-> the cutover, and it is one deliberate step, not housekeeping.
+## Why the mobile menu did not open (2026-09-12)
+
+The Designer half of the migration was live; the code half never landed. Two
+things were in the way — the first was enough on its own:
+
+1. **The narthex tag is not on the site.** Site settings → Custom code still
+   holds the pre-migration Head and Footer verbatim — the `.navbar` height
+   measurer, the jump-link handler, the ~200-line modal IIFE — and no
+   `<script src="…narthex…">` anywhere. The attributes below it are applied and
+   published (`vci-nav="header"` on `nav.navbar`, `"menu"` on `.navbar_menu`,
+   `"toggle"` on `.navbar_hamburger`), so the markup is asking for a nav module
+   that never arrives, and nothing toggles `.navbar_menu.is-open`.
+2. **The version pinned here did not exist.** `site-footer.html` asked for
+   `narthex@v0.2.0`, copied from the example in the narthex README's release
+   section — a tag that was never cut (the repo has v0.1.0, v0.1.1, v0.4.0,
+   v0.5.0, v0.5.1). Pasting the footer as it stood would have swapped one dead
+   menu for another: jsDelivr 404s an unknown tag, and the page carries on
+   without narthex. Now pinned to `v0.5.1`, whose nav roles and settings are
+   the ones this site's attributes already use.
+
+It reads as a touch-device bug because the hamburger is the only way in and it
+only exists there: `.navbar_hamburger` is `display: none` at base and
+`display: flex` from `medium` down. There is nothing to click on a desktop, so
+the only report comes from a phone.
+
+Checked against the site's own markup and styles, as the Data API reports them
+today, in Chromium at 390 × 844 with touch emulation: with no script tag and
+with the 404 tag, a tap leaves the menu at `max-height: 0`; with narthex
+loading, the same tap adds `is-open` and the menu opens.
+
+### Made live, 2026-09-12
+
+1. `site-head.html` into Head and `site-footer.html` into Footer, replacing the
+   pre-migration blocks. The site is now on the state this folder describes,
+   so the two are in step for the first time.
+2. `faq_accordion_toggle` removed from the site's applied scripts in the same
+   pass. The accordion roles were already on the FAQ elements, so it and
+   narthex would both have toggled every row. `navbarSpeakerNames` stays.
+3. `cursor: pointer` added to `.navbar_hamburger` in the Designer. iOS Safari
+   uses that property, among a short list, to decide whether a bare `<div>` is
+   "clickable", and a tap on an element it judges unclickable is not delivered
+   to a document-level click handler — which is how narthex listens. Chromium's
+   touch emulation does not model the rule, so it could not be proven here; the
+   property costs nothing (the hamburger is hidden on desktop) and removes the
+   question.
+4. Published to the Webflow subdomain — the site has no custom domain attached.
+
+Worth walking on a phone: the hamburger, the FAQ rows, and a sticky-menu jump
+link (the scrollspy still runs from the Head, but the scrolling itself is
+`vci-scroll="native"` now).
 
 ## What moved to narthex
 
@@ -110,7 +153,8 @@ code, and neither applied registered script is a menu toggle.
 
 narthex's default menu class is `is-open`, so `vci-nav="toggle"` + `vci-nav="menu"`
 connect the two ends with no new styles. The menu starts working the moment the
-footer script tag lands.
+footer script tag lands — pointing at a tag that exists, which is the second
+half of the story above.
 
 ## What stays here
 
@@ -119,6 +163,31 @@ footer script tag lands.
 - **Parallax keyframes** — presentation, not state.
 - **Turnstile hiding rule** — one form, one site.
 - **Theme switcher** — still commented out, left exactly as it was.
+- **Nav dropdown open** — the Interactions that animated the three dropdowns
+  were deleted in the Designer on 2026-09-12, which left them popping in.
+  The replacement is a keyframe fade on Webflow's own `w--open`: its dropdown
+  JS still does the toggling and its own `display: none` still hides the
+  closed list, so nothing is rendered-but-hidden and the closed links stay out
+  of the tab order. Desktop only. **The close is deliberately instant** — see
+  below.
+- **Mobile menu close icon and dim** — narthex puts its open class on the
+  toggle and on the `vci-nav="dim"` element, and closes the menu when the dim
+  is clicked; the footer holds only what the style panel cannot say,
+  `pointer-events` and a descendant selector that folds the two hamburger bars
+  into an X.
+
+### One loose end: the dropdown cannot fade out
+
+A first version overrode `display` so the list stayed rendered and could fade
+both ways. It worked, and it uncovered something the instant hide had been
+hiding: **on close the list shifts left before it fades.** Its geometry differs
+between the open and closed states — a Designer style on the dropdown's Open
+state, or a position Webflow's own JS applies while open, are the two
+candidates; the Data API cannot read a dropdown's Open state, so neither is
+confirmed. Until it is, the close is instant, exactly as it is with no
+Interaction and no CSS. To pick it up again: open a dropdown on desktop,
+compare the list's box in the Open state against its base state in the style
+panel, and look for an inline `style` Webflow adds while it is open.
 
 Untouched and still registered scripts: `LivestreamResolver`,
 `Theme Logo Swap CSS`. `navbarSpeakerNames` is now tracked here — see below.
@@ -209,7 +278,7 @@ doc lists every one; the short version:
 | `nav.navbar` (navbar component root) | `vci-nav="header"`, `vci-nav-height-var="--nav-height"`, `vci-nav-key="main"` |
 | `.navbar_menu` | `vci-nav="menu"` |
 | `.navbar_hamburger` | `vci-nav="toggle"` |
-| a new full-page backdrop div, if wanted | `vci-nav="dim"`, `vci-nav-key="main"` — optional, none exists today |
+| `.navbar_dim` — a backdrop div, first child of `nav.navbar` so the panel paints over it. Added 2026-09-12 | `vci-nav="dim"`, `vci-nav-key="main"` |
 | `modal` component root | `vci-modal="dialog"` — no key needed, see below |
 | every `data-modal-open` trigger | `vci-modal="open"` + `vci-modal-key="<key>"` |
 | `a.modal_close` | `vci-modal="close"` |
@@ -267,3 +336,12 @@ so this does not have to be a big-bang swap:
 3. Delete the old block for that behaviour only once its hooks are all moved.
 4. `faq_accordion_toggle` must be removed from applied scripts the moment the
    accordion roles go on — that one *would* double-toggle.
+
+**And it must stay removed.** It came back on 2026-09-12 at 14:37, in the same
+write that registered `navbarSpeakerNames` 1.2.0 — which is what saving the
+Designer's custom-code panel does: it writes the whole applied list, so a panel
+opened before the script was removed puts it back. Both engines then toggle
+each FAQ row on one click and they cancel out: the rows open and will not
+close. That is what happened on Sundays. If it reappears, remove it again
+rather than reaching for the accordion CSS; deleting the registered script
+outright is the only way to make it unrepeatable, and that is irreversible.
