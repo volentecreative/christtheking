@@ -91,24 +91,53 @@
    and until that is found, the close stays instant, as it was under the
    Interaction-less default.
 
-   Desktop only. Below 992px the list is `position: static` inside the mobile
-   panel and Webflow's show/hide is what that layout expects. */
+   On desktop it is a fade. Below 992px the list is `position: static` in the
+   flow of the mobile panel, where the same appearance has to be a slide. */
 @keyframes ctk-dropdown-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
+/* The 0fr → 1fr grid row is the one way to animate to a height nobody has
+   measured. Only `from` is written: what it does not name — the padding and
+   border the Designer puts on the list — interpolates from these zeros to
+   whatever the element actually computes, so no Designer value is copied into
+   this file to drift out of date. */
+@keyframes ctk-dropdown-down {
+  from {
+    grid-template-rows: 0fr;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+  }
+}
+
 @media (min-width: 992px) {
   .nav_dropdown-list.w-dropdown-list.w--open {
-    animation: ctk-dropdown-in 200ms ease both;
+    animation: ctk-dropdown-in 200ms ease-out both;
   }
 
   .navbar_dropdown-toggle .chevron_down {
-    transition: transform 200ms ease;
+    transition: transform 200ms ease-out;
   }
 
   .navbar_dropdown-toggle.w--open .chevron_down {
     transform: rotate(180deg);
+  }
+}
+
+@media (max-width: 991px) {
+  .nav_dropdown-list.w-dropdown-list.w--open {
+    display: grid;
+    grid-template-rows: 1fr;
+    animation: ctk-dropdown-down 200ms ease-out;
+  }
+
+  /* A row can only collapse if what sits in it may be clipped. */
+  .nav_dropdown-list.w-dropdown-list.w--open > * {
+    overflow: hidden;
+    min-height: 0;
   }
 }
 
@@ -129,7 +158,13 @@
 
    The bars are 3px tall with a 0.5rem gap, so half the distance between their
    centres is 0.25rem + 1.5px — that is what each has to travel to meet in the
-   middle before rotating. */
+   middle before rotating.
+
+   The dim's own geometry is in the Designer, and its `top` at the medium
+   breakpoint is narthex's `--nav-offset`: the header's live bottom edge in the
+   viewport, which drops as the announcement bar scrolls away. A fixed number
+   cannot work — 6rem sits 42px above the header's bottom edge while the bar is
+   still on screen, which is the dim creeping over the header. */
 [vci-nav="dim"] {
   pointer-events: none;
 }
@@ -140,7 +175,7 @@
 
 @media (max-width: 991px) {
   .navbar_hamburger_line {
-    transition: transform 300ms ease;
+    transition: transform 200ms ease-out;
   }
 
   .navbar_hamburger.is-open .navbar_hamburger_line:first-child {
