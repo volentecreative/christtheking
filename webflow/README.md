@@ -170,26 +170,23 @@ half of the story above.
   closed list (deferred to the end of the transition with
   `transition-behavior: allow-discrete`), so nothing is rendered-but-hidden
   and the closed links stay out of the tab order. Desktop fades; inside the
-  mobile panel the list slides. **The list's horizontal alignment is pinned
-  in the footer** — see below.
+  mobile panel the list slides. The Designer owns the list's
+  position in both states — see below.
 - **Mobile menu close icon and dim** — narthex puts its open class on the
   toggle and on the `vci-nav="dim"` element, and closes the menu when the dim
   is clicked; the footer holds only what the style panel cannot say,
   `pointer-events` and a descendant selector that folds the two hamburger bars
   into an X.
 
-### The dropdown list is pinned left-aligned in the footer
+### The dropdown list's position is the Designer's
 
 The Designer gives the non-mega lists two geometries: the base style says
 `right: 0` and the Open state says `left: 0`, flush with the toggle. The
-close fade runs after `w--open` comes off, so the list would snap to the
-right-aligned base box for the whole way out. The footer pins one geometry
-for both states, with `!important` because an inline position from Webflow's
-JS was reproduced to jump as well. It pins the Open state's: left-aligned,
-which is what the Designer shows. The mega menu keeps `left: 0; right: 0`.
-
-The cost: changing the list's horizontal alignment in the Designer will not
-take effect. Change it in `site-footer.html` instead.
+close fade runs after `w--open` comes off, so for the 200ms the list is still
+visible it would wear the base box — a jump before the fade. A short script
+in the footer reads the computed position when a list opens and writes it
+back inline for the length of the close, then removes it. It decides nothing:
+alignment in either state is set in the Designer and takes effect as-is.
 
 Untouched and still registered scripts: `LivestreamResolver`,
 `Theme Logo Swap CSS`. `navbarSpeakerNames` is now tracked here — see below.

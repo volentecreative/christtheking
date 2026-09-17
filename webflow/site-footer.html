@@ -104,37 +104,6 @@
     .nav_dropdown-list.w-dropdown-list.w--open { opacity: 0; }
   }
 
-  /* Why the box is pinned, with !important.
-
-     The Designer gives the list two geometries. Its base style says
-     `right: 0`, and its Open state (which the Data API cannot read, but the
-     Designer shows) says `left: 0` — the list opens flush with the toggle's
-     left edge. The fade-out runs after w--open comes off, so without a pin the
-     list snaps to the base geometry, right-aligned, for the whole way out:
-     that is the left-jump an earlier attempt at a close animation showed.
-
-     So the list gets one geometry for both states, and it is the Open state's,
-     since that is what is seen while it is on screen. `!important` is needed
-     because a position Webflow's JS sets inline was reproduced to jump too.
-
-     The cost: the list's horizontal alignment in the Designer will not take
-     effect until these are removed. Change it here instead. */
-  .nav_dropdown-list.w-dropdown-list {
-    top: 100% !important;
-    bottom: auto !important;
-    transform: none !important;
-  }
-
-  .nav_dropdown-list.w-dropdown-list:not(.mega) {
-    left: 0 !important;
-    right: auto !important;
-  }
-
-  .nav_dropdown-list.mega.w-dropdown-list {
-    left: 0 !important;
-    right: 0 !important;
-  }
-
   .navbar_dropdown-toggle .chevron_down {
     transition: transform 200ms ease-out;
   }
@@ -188,6 +157,52 @@
   .navbar_dropdown-toggle .chevron_down { transition: none; }
 }
 </style>
+
+<script>
+/* Hold the list's open box for the length of the close fade.
+
+   The Designer owns the list's position in both states, and the two differ:
+   the base style and the Open state can each set their own left/right. The
+   fade-out runs after w--open comes off, so for those 200ms the list would
+   wear the base geometry while still visible — a jump before the fade.
+
+   Nothing here decides where the list goes. On open, the values the Designer
+   computed are read; on close, they are written back inline for the
+   transition and removed when it ends. Change alignment in the Designer. */
+(() => {
+  const desktop = matchMedia('(min-width: 992px)');
+  const PROPS = ['top', 'right', 'bottom', 'left', 'transform'];
+
+  document.querySelectorAll('.nav_dropdown-list.w-dropdown-list').forEach((list) => {
+    let open = list.classList.contains('w--open');
+    let held = null;
+    let timer = 0;
+
+    const release = () => {
+      clearTimeout(timer);
+      PROPS.forEach((prop) => list.style.removeProperty(prop));
+      list.removeEventListener('transitionend', release);
+    };
+
+    new MutationObserver(() => {
+      const now = list.classList.contains('w--open');
+      if (now === open) return;
+      open = now;
+      if (!desktop.matches) return;
+
+      if (now) {
+        release();
+        const cs = getComputedStyle(list);
+        held = PROPS.map((prop) => cs.getPropertyValue(prop));
+      } else if (held) {
+        PROPS.forEach((prop, i) => list.style.setProperty(prop, held[i]));
+        list.addEventListener('transitionend', release);
+        timer = setTimeout(release, 400);
+      }
+    }).observe(list, { attributes: true, attributeFilter: ['class'] });
+  });
+})();
+</script>
 
 <style>
 /* Mobile menu: the hamburger becomes a close icon, and the dim takes taps.
