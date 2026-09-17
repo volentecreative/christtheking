@@ -204,6 +204,63 @@
 })();
 </script>
 
+<script>
+/* Media card dates: the year appears once a date is more than twelve months
+   old. "Sep 1" is this year's; "Sep 1, 2025" is last year's.
+
+   The Designer cannot do date arithmetic, so the card carries two copies of
+   its Date: the visible one, formatted without a year, and a hidden one with
+   the year (the "Sort date" prop, which Finsweet also sorts the media list
+   on). This reads the hidden copy, and when it is older than the cutoff
+   appends its year to the visible text. Nothing else about the format is
+   touched, so the Designer still owns how the date reads.
+
+   Cards arrive after load too - Finsweet's infinite load on the media page -
+   so a MutationObserver picks up new ones. Each card is stamped once. */
+(() => {
+  const MONTHS = 12;
+
+  const cutoff = () => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - MONTHS);
+    return d;
+  };
+
+  const stamp = (el) => {
+    el.setAttribute('data-media-date-stamped', '');
+
+    let scope = el.parentElement;
+    let full = null;
+    while (scope && !(full = scope.querySelector('[data-media-date-full]'))) {
+      scope = scope.parentElement;
+    }
+    if (!full) return;
+
+    const when = new Date(full.textContent.trim());
+    if (isNaN(when) || when >= cutoff()) return;
+
+    const year = String(when.getFullYear());
+    const text = el.textContent.trim();
+    if (text && text.indexOf(year) === -1) el.textContent = text + ', ' + year;
+  };
+
+  const run = () => {
+    document.querySelectorAll('[data-media-date]:not([data-media-date-stamped])').forEach(stamp);
+  };
+
+  const start = () => {
+    run();
+    new MutationObserver(run).observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
+
 <style>
 /* Mobile menu: the hamburger becomes a close icon, and the dim takes taps.
 
