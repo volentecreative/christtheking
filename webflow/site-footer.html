@@ -104,32 +104,35 @@
     .nav_dropdown-list.w-dropdown-list.w--open { opacity: 0; }
   }
 
-  /* Why the box is pinned while open, with !important.
+  /* Why the box is pinned, with !important.
 
-     A first attempt at a close animation showed the list jumping left before
-     it faded. Nothing here moves it, and Webflow's own CSS differs between the
-     two states only in `display` — so something outside both is giving the
-     open list a different box: a Designer style on the dropdown's Open state
-     (which the Data API cannot read) or a position Webflow's JS sets inline.
-     Reproducing each in Chromium: both jump, a plain pin fixes the first, and
-     only !important fixes the inline one. So the open box is nailed to the
-     Designer's base geometry, which is where it renders today.
+     The Designer gives the list two geometries. Its base style says
+     `right: 0`, and its Open state (which the Data API cannot read, but the
+     Designer shows) says `left: 0` — the list opens flush with the toggle's
+     left edge. The fade-out runs after w--open comes off, so without a pin the
+     list snaps to the base geometry, right-aligned, for the whole way out:
+     that is the left-jump an earlier attempt at a close animation showed.
 
-     The cost: styling a dropdown's Open position in the Designer will not take
-     effect until these are removed. Change them here instead. */
-  .nav_dropdown-list.w-dropdown-list.w--open {
+     So the list gets one geometry for both states, and it is the Open state's,
+     since that is what is seen while it is on screen. `!important` is needed
+     because a position Webflow's JS sets inline was reproduced to jump too.
+
+     The cost: the list's horizontal alignment in the Designer will not take
+     effect until these are removed. Change it here instead. */
+  .nav_dropdown-list.w-dropdown-list {
     top: 100% !important;
     bottom: auto !important;
-    right: 0 !important;
     transform: none !important;
   }
 
-  .nav_dropdown-list.w-dropdown-list.w--open:not(.mega) {
-    left: auto !important;
+  .nav_dropdown-list.w-dropdown-list:not(.mega) {
+    left: 0 !important;
+    right: auto !important;
   }
 
-  .nav_dropdown-list.mega.w-dropdown-list.w--open {
+  .nav_dropdown-list.mega.w-dropdown-list {
     left: 0 !important;
+    right: 0 !important;
   }
 
   .navbar_dropdown-toggle .chevron_down {
