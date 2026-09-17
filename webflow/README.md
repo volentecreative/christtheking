@@ -10,6 +10,7 @@ in the Designer.
 | `site-head.html` | Site settings → Custom code → **Head** |
 | `site-footer.html` | Site settings → Custom code → **Footer** |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
+| `embeds/media-template-crumbs-and-series.html` | Media Template page → the HTML Embed with class `breadcrumb-handler` |
 
 The two custom-code blocks are the **post-migration** state: the shared
 behaviour has moved to [narthex](https://github.com/volentecreative/narthex),

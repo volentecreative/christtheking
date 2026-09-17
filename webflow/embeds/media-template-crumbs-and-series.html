@@ -1,0 +1,122 @@
+<!-- Christ the King — Media Template page → HTML Embed "breadcrumb-handler"
+     (the embed with class .breadcrumb-handler, near the top of the page).
+     Page-level footer code cannot be written on this template through the
+     API, so the script lives in an embed. This file is its source of truth. -->
+<script>
+/* ===========================================================================
+   Media item page. Two jobs, both of which the style panel genuinely can't do.
+
+   1. Breadcrumb filter links. Each crumb's label comes from a CMS field and the
+      href is built from it, so a new Type option or Media Series links to the
+      right filter with no per-item filter-URL field. Webflow cannot concatenate
+      a query string, and an Option field cannot be bound to a link at all.
+
+   2. Series position. "3 of 11", "11 items", and the row numbers in the series
+      playlist are all counted from the playlist itself. There is deliberately
+      no "part number" CMS field to keep in sync: add a sermon to a series and
+      everything renumbers on its own. Order is the Date field.
+
+   An item with no series gets neither. The playlist is a Collection List
+   filtered on "Series equals this item's Series", and with no series that
+   matches every other series-less item, so the counter would read "1 of 6"
+   over a playlist of strangers. The series crumb's name is the tell: empty
+   means no series, and the chip and the playlist come out of the page.
+   =========================================================================== */
+(function () {
+  'use strict';
+
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var path = function (p) { return String(p || '').replace(/\/+$/, ''); };
+
+  function crumbs() {
+    document.querySelectorAll('[data-crumb-filter]').forEach(function (crumb) {
+      var field = crumb.getAttribute('data-crumb-filter');
+      /* Take the value from the marked child when there is one. The series
+         crumb is a chip - thumbnail, series name, "3 of 11" - so its own
+         textContent reads "Congregational Worship3 of 11" and would build a
+         filter that matches nothing. */
+      var src = crumb.querySelector('[data-crumb-value]') || crumb;
+      var value = (src.textContent || '').trim();
+      crumb.href = value
+        ? '/media?' + field + '_equal=' + encodeURIComponent(value)
+        : '/media';
+    });
+  }
+
+  /* True when this item belongs to a series. Read from the series crumb's
+     name, which is bound to the Series reference and renders empty without
+     one. When it is empty the chip and the playlist are removed, not hidden:
+     a class on either sets display, which would win over [hidden]. */
+  function inSeries() {
+    var chip = document.querySelector('[data-crumb-filter="series"]');
+    var name = chip && chip.querySelector('[data-crumb-value]');
+    if (name && (name.textContent || '').trim()) return true;
+    if (chip) chip.parentNode.removeChild(chip);
+    document.querySelectorAll('[data-series-playlist]').forEach(function (el) {
+      el.parentNode.removeChild(el);
+    });
+    return false;
+  }
+
+  function series() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('[data-series-row]'));
+    if (!rows.length) return;
+
+    var here = path(location.pathname);
+    var items = rows.map(function (row, i) {
+      var link = row.querySelector('a[href]');
+      var when = row.querySelector('[data-series-date]');
+      return {
+        row: row,
+        order: i,
+        current: !!link && path(link.pathname) === here,
+        time: when ? Date.parse(when.textContent.trim()) : NaN
+      };
+    });
+
+    /* Date order is series order. If any date fails to parse, keep the
+       Collection List's own order rather than shuffling rows at random. */
+    var dated = items.every(function (it) { return !isNaN(it.time); });
+    if (dated) items.sort(function (a, b) { return a.time - b.time || a.order - b.order; });
+
+    var index = -1;
+    items.forEach(function (it, n) { if (it.current) index = n; });
+    var listed = index !== -1;
+    var total = items.length;
+
+    if (!listed) {
+      /* The playlist filters this item out, so it is one row short and this
+         item's own slot has to be placed by date. */
+      var mark = document.querySelector('[data-current-date]');
+      var now = mark ? Date.parse(mark.textContent.trim()) : NaN;
+      total = items.length + 1;
+      index = 0;
+      if (dated && !isNaN(now)) items.forEach(function (it) { if (it.time < now) index++; });
+    }
+
+    items.forEach(function (it, n) {
+      var label = it.row.querySelector('[data-series-index]');
+      if (label) label.textContent = pad((listed || n < index ? n : n + 1) + 1);
+    });
+
+    document.querySelectorAll('[data-series-count]').forEach(function (el) {
+      el.textContent = (index + 1) + ' of ' + total;
+    });
+    document.querySelectorAll('[data-series-total]').forEach(function (el) {
+      el.textContent = total + (total === 1 ? ' item' : ' items');
+    });
+  }
+
+  function init() {
+    var has = inSeries();
+    crumbs();
+    if (has) series();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
