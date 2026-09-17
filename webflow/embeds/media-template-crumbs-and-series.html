@@ -16,11 +16,6 @@
       no "part number" CMS field to keep in sync: add a sermon to a series and
       everything renumbers on its own. Order is the Date field.
 
-   An item with no series gets neither. The playlist is a Collection List
-   filtered on "Series equals this item's Series", and with no series that
-   matches every other series-less item, so the counter would read "1 of 6"
-   over a playlist of strangers. The series crumb's name is the tell: empty
-   means no series, and the chip and the playlist come out of the page.
    =========================================================================== */
 (function () {
   'use strict';
@@ -41,21 +36,6 @@
         ? '/media?' + field + '_equal=' + encodeURIComponent(value)
         : '/media';
     });
-  }
-
-  /* True when this item belongs to a series. Read from the series crumb's
-     name, which is bound to the Series reference and renders empty without
-     one. When it is empty the chip and the playlist are removed, not hidden:
-     a class on either sets display, which would win over [hidden]. */
-  function inSeries() {
-    var chip = document.querySelector('[data-crumb-filter="series"]');
-    var name = chip && chip.querySelector('[data-crumb-value]');
-    if (name && (name.textContent || '').trim()) return true;
-    if (chip) chip.parentNode.removeChild(chip);
-    document.querySelectorAll('[data-series-playlist]').forEach(function (el) {
-      el.parentNode.removeChild(el);
-    });
-    return false;
   }
 
   function series() {
@@ -107,11 +87,7 @@
     });
   }
 
-  function init() {
-    var has = inSeries();
-    crumbs();
-    if (has) series();
-  }
+  function init() { crumbs(); series(); }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
