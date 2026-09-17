@@ -163,31 +163,33 @@ half of the story above.
 - **Parallax keyframes** — presentation, not state.
 - **Turnstile hiding rule** — one form, one site.
 - **Theme switcher** — still commented out, left exactly as it was.
-- **Nav dropdown open** — the Interactions that animated the three dropdowns
-  were deleted in the Designer on 2026-09-12, which left them popping in.
-  The replacement is a keyframe fade on Webflow's own `w--open`: its dropdown
+- **Nav dropdowns open and close** — the Interactions that animated the three
+  dropdowns were deleted in the Designer on 2026-09-12, which left them popping
+  in. The replacement is a transition on Webflow's own `w--open`: its dropdown
   JS still does the toggling and its own `display: none` still hides the
-  closed list, so nothing is rendered-but-hidden and the closed links stay out
-  of the tab order. Desktop only. **The close is deliberately instant** — see
-  below.
+  closed list (deferred to the end of the transition with
+  `transition-behavior: allow-discrete`), so nothing is rendered-but-hidden
+  and the closed links stay out of the tab order. Desktop fades; inside the
+  mobile panel the list slides. **The list's horizontal alignment is pinned
+  in the footer** — see below.
 - **Mobile menu close icon and dim** — narthex puts its open class on the
   toggle and on the `vci-nav="dim"` element, and closes the menu when the dim
   is clicked; the footer holds only what the style panel cannot say,
   `pointer-events` and a descendant selector that folds the two hamburger bars
   into an X.
 
-### One loose end: the dropdown cannot fade out
+### The dropdown list is pinned left-aligned in the footer
 
-A first version overrode `display` so the list stayed rendered and could fade
-both ways. It worked, and it uncovered something the instant hide had been
-hiding: **on close the list shifts left before it fades.** Its geometry differs
-between the open and closed states — a Designer style on the dropdown's Open
-state, or a position Webflow's own JS applies while open, are the two
-candidates; the Data API cannot read a dropdown's Open state, so neither is
-confirmed. Until it is, the close is instant, exactly as it is with no
-Interaction and no CSS. To pick it up again: open a dropdown on desktop,
-compare the list's box in the Open state against its base state in the style
-panel, and look for an inline `style` Webflow adds while it is open.
+The Designer gives the non-mega lists two geometries: the base style says
+`right: 0` and the Open state says `left: 0`, flush with the toggle. The
+close fade runs after `w--open` comes off, so the list would snap to the
+right-aligned base box for the whole way out. The footer pins one geometry
+for both states, with `!important` because an inline position from Webflow's
+JS was reproduced to jump as well. It pins the Open state's: left-aligned,
+which is what the Designer shows. The mega menu keeps `left: 0; right: 0`.
+
+The cost: changing the list's horizontal alignment in the Designer will not
+take effect. Change it in `site-footer.html` instead.
 
 Untouched and still registered scripts: `LivestreamResolver`,
 `Theme Logo Swap CSS`. `navbarSpeakerNames` is now tracked here — see below.
