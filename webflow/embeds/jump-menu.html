@@ -14,6 +14,14 @@
      A link tap closes the drawer and the browser does the anchor scroll (vci-scroll="native":
      smooth unless reduced motion, hash and focus handled natively). Transform and
      opacity only; the cycle is skipped for reduced motion. -->
+<style>
+/* Webflow's own Current state on these anchor links (it lights whichever link
+   matches the section in view) still carried the old 1px transparent border,
+   so a link shifted by a pixel as it gained and lost it. 2px matches the base
+   class. The state lives in the Designer and is not reachable by the API;
+   clearing its border override there makes this rule redundant. */
+.sticky-menu-nav-item.w--current { border-width: 2px; }
+</style>
 <script>
 (function () {
   function init() {
@@ -54,6 +62,8 @@
     // mobile, below the sticky navbar on desktop. Never above where an anchor
     // click actually parks the article (its scroll-margin-top) — otherwise the
     // clicked article stops just short of the line and the previous one stays lit.
+    // And no higher than 35% of the screen, so an article takes over once it
+    // fills the reading area rather than only when it reaches the very top.
     function lineY() {
       var landing = parseFloat(getComputedStyle(items[0].target).scrollMarginTop) || 0;
       var bar;
@@ -63,7 +73,7 @@
         var nav = document.querySelector('.navbar');
         bar = (nav ? nav.getBoundingClientRect().bottom : 72) + 16;
       }
-      return Math.max(bar, landing + 8);
+      return Math.max(bar, landing + 8, window.innerHeight * 0.35);
     }
 
     // Centre the link in whichever element scrolls: the drawer's list on
