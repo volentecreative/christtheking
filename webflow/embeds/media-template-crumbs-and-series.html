@@ -3,21 +3,10 @@
      Page-level footer code cannot be written on this template through the
      API, so the script lives in an embed. This file is its source of truth. -->
 <style>
-/* Tablet/phone: the series playlist is a narthex accordion (vci-accordion on
-   .media-series_playlist / .media-series_body), closed by default, so the
-   card is just its header ("More in …", the "13 of 16" toggle) and the
-   Previous / Next pair. Desktop keeps it open. The "16 items" count is the
-   toggle's job down here. */
-/* Desktop: undo narthex's collapse CSS (grid rows + overflow:hidden on the
-   child), which would clip the list instead of letting the 20rem box scroll. */
-@media (min-width: 992px) {
-  .media-series_playlist .media-series_body { display: block; }
-  .media-series_playlist .media-series_body > * { overflow: visible; }
-}
-@media (max-width: 991px) {
-  .media-series_playlist:not([vci-accordion-state="open"]) .media-series_body { display: none; }
-  [data-series-total] { display: none; }
-}
+/* Series card header: "More in" and the series name wrap as whole words
+   beside the "All 16 →" link instead of being squeezed letter by letter. */
+.media-series_playlist .media-transcript_header > .horz-flex { flex-wrap: wrap; min-width: 0; }
+.media-series_playlist .media-transcript_header > .horz-flex > h3 { white-space: nowrap; }
 </style>
 <script>
 /* ===========================================================================
@@ -28,7 +17,7 @@
       right filter with no per-item filter-URL field. Webflow cannot concatenate
       a query string, and an Option field cannot be bound to a link at all.
 
-   2. Series position. "3 of 11", "11 items", and the row numbers in the series
+   2. Series position. "3 of 11", "All 11", and the row numbers in the series
       playlist are all counted from the playlist itself. There is deliberately
       no "part number" CMS field to keep in sync: add a sermon to a series and
       everything renumbers on its own. Order is the Date field. The same
@@ -118,7 +107,7 @@
       el.textContent = (index + 1) + ' of ' + total;
     });
     document.querySelectorAll('[data-series-total]').forEach(function (el) {
-      el.textContent = total + (total === 1 ? ' item' : ' items');
+      el.textContent = 'All ' + total;
     });
 
     /* Previous / next within the series: "13 · Beware Men Like Tobiah". The
@@ -162,23 +151,19 @@
     return { total: total, index: index };
   }
 
-  /* Desktop: always open. Tablet/phone: closed until the toggle is used.
-     narthex reads vci-accordion-open when it starts, after this has run. */
-  function disclosure(total, index) {
-    var item = document.querySelector('.media-series_playlist[vci-accordion="item"]');
-    if (!item) return;
-    var wide = matchMedia('(min-width: 992px)');
-    if (wide.matches) item.setAttribute('vci-accordion-open', 'true');
-    wide.addEventListener('change', function (e) {
-      if (e.matches && window.vci && vci.accordion) vci.accordion.open(item);
+  /* "All 16 →" in the series card goes where the series chip goes: the
+     media list filtered to this series (there's no series page of its own). */
+  function seriesLink(total) {
+    var chip = document.querySelector('[data-crumb-filter="series"]');
+    var name = chip && chip.querySelector('[data-crumb-value]');
+    document.querySelectorAll('[data-series-link]').forEach(function (a) {
+      if (!chip || !name || !name.textContent.trim()) { a.style.display = 'none'; return; }
+      a.href = chip.getAttribute('href');
+      a.setAttribute('aria-label', 'View all ' + (total ? total + ' ' : '') + 'in ' + name.textContent.trim());
     });
-    var t = item.querySelector('[data-series-toggle]');
-    if (!t) return;
-    if (total < 2) { t.parentElement.style.display = 'none'; return; }
-    t.setAttribute('aria-label', 'Part ' + (index + 1) + ' of ' + total + '. Show all parts');
   }
 
-  function init() { crumbs(); var s = series(); disclosure(s ? s.total : 0, s ? s.index : 0); }
+  function init() { crumbs(); var s = series(); seriesLink(s ? s.total : 0); }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
