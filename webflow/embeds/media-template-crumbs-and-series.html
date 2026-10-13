@@ -18,7 +18,7 @@
       count drives the series Previous / Next links ([data-series-prev],
       [data-series-next]), and hides the date-order nav ([data-date-nav],
       Finsweet previous-item / next-item) when the item is in a series. The
-      current row gets .is-current and is centred in the playlist's scroll box.
+      current row gets .is-active and is centred in the playlist's scroll box.
    Source of truth: webflow/embeds/media-template-crumbs-and-series.html in the repo.
    =========================================================================== */
 (function () {
@@ -83,12 +83,13 @@
       if (label) label.textContent = pad((listed || n < index ? n : n + 1) + 1);
     });
 
-    /* The row being watched: .is-current (style panel: background + gold
-       edge) and scrolled to the middle of the playlist box. The box is
-       scrolled directly - scrollIntoView would move the whole page too. */
+    /* The row being watched gets .is-active - the site's active-item pattern,
+       as on the jump menu's .sticky-menu-nav-item.is-active: gold 2px border,
+       surface background, gold text (style panel) - and is scrolled to the
+       middle of the playlist box. The box is scrolled directly - scrollIntoView would move the whole page too. */
     if (listed) {
       var row = items[index].row;
-      row.classList.add('is-current');
+      row.classList.add('is-active');
       var box = row.parentElement;
       while (box && box !== document.body && !(box.scrollHeight > box.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
       if (box && box !== document.body) {
