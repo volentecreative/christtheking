@@ -483,16 +483,23 @@ videos and finishes in well under a minute.
 
 ## Running it on a schedule (GitHub Actions)
 
-`.github/workflows/sync.yml.example` is a working starting point. Add
-`WEBFLOW_API_TOKEN` as a repository secret and rename the file to drop
-`.example`.
+Both workflows run daily, unattended, using the `WEBFLOW_API_TOKEN` (and, for
+the podcast, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`) repository secrets:
 
-One caveat worth knowing before you rely on it: **YouTube frequently blocks
-requests from GitHub-hosted runner IPs.** If the action starts failing with
-"Sign in to confirm you're not a bot", the fixes are, in order of hassle: a
-self-hosted runner (a Mac at the church or your own machine), or exporting
-cookies and passing them via `YTDLP_COOKIES_FILE`. A `launchd` job on a Mac
-that's always on avoids the problem entirely.
+| Workflow | When (UTC) | Does |
+|---|---|---|
+| `youtube-sync.yml` | 14:00 | new videos into Webflow |
+| `sync.yml` | 15:00 | podcast links, then speaker-text reconcile |
+
+YouTube runs first because the podcast step matches episodes onto the items it
+creates. Both can also be run by hand from the Actions tab; a manual YouTube run
+defaults to dry-run, a scheduled one writes.
+
+**YouTube blocks GitHub-hosted runner IPs**, so the scheduled YouTube run takes
+the [partial path](#when-youtube-wont-answer): new sermons appear with title,
+date, thumbnail, speaker and series, but no description or transcript. Each
+daily run retries those, and `npm run all` from a Mac (or a self-hosted runner,
+or a `launchd` job on an always-on Mac) fills them in.
 
 ---
 
