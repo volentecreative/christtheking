@@ -1,14 +1,21 @@
-# The automated half of the pipeline: everything that is a plain API call.
+# The whole automated pipeline, one job, daily: YouTube, then podcast, then
+# speaker-text. sync-all.js is the same thing for a Mac.
 #
-# Apple, Spotify and Webflow have no bot check, so they run fine on a cloud
-# runner — seconds per run. YouTube does NOT: it throttles and blocks
-# GitHub-hosted runner IPs, which is why sync-youtube.js is a separate
-# workflow that runs degraded here, and why sync-all.js exists for running the
-# whole thing from a residential IP. See youtube-sync.yml for the evidence.
+# Apple, Spotify and Webflow have no bot check, so those steps run fine on a
+# cloud runner. YouTube does NOT: it throttles and blocks GitHub-hosted runner
+# IPs. Evidence from this project: on a residential IP an unauthenticated run
+# degraded from 44s to 240s+ per video, then failed 79 videos in a row. A
+# shared cloud IP is worse, and the fix that worked locally (browser cookies)
+# does not transfer - cookies expire in days and a login session does not
+# belong in CI secrets.
 #
-# So "one combined sync" is two jobs by necessity, not by choice:
-#   youtube-sync  — new videos into Webflow, daily at 14:00 UTC, unattended
-#   here          — podcast links + speaker-text reconcile, daily, an hour later
+# Expect the per-video fetch to be refused here ("Sign in to confirm you're not
+# a bot"). That is NOT a broken run and does not fail the job: the channel
+# listing still answers, so a video missing from Webflow is created from it with
+# the title, duration, type, date and thumbnail, and only the description and
+# transcript are left blank. A partial item is never marked synced, so every
+# run retries it, and a run from a machine YouTube answers (sync-all.js on a
+# Mac) fills it in. See "When YouTube won't answer" in the README.
 name: Sync
 
 on:
@@ -20,10 +27,17 @@ on:
         description: 'Preview only - write nothing'
         type: boolean
         default: false
-      skip_podcast:
-        description: 'Reconcile speaker text only'
+      skip_youtube:
+        description: 'Skip the YouTube sync'
         type: boolean
         default: false
+      skip_podcast:
+        description: 'Skip the podcast sync'
+        type: boolean
+        default: false
+      max_work:
+        description: 'Max YouTube videos to fetch this run'
+        default: '15'
 
 concurrency:
   group: sync
@@ -32,7 +46,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,17 +58,33 @@ jobs:
       - name: Run tests
         run: node --test test/*.test.js
 
+      - name: Install yt-dlp
+        if: ${{ !inputs.skip_youtube }}
+        run: |
+          sudo curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+          yt-dlp --version
+
+      # First: the podcast step matches episodes onto the items this creates.
+      # On a schedule there are no inputs, so max_work needs its own fallback.
+      - name: YouTube → Webflow
+        if: ${{ !inputs.skip_youtube }}
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+        run: node sync-youtube.js ${{ inputs.dry_run && '--dry-run' || '' }} --max-work ${{ inputs.max_work || '15' }} --concurrency 2 --verbose
+
+      # Runs even if the YouTube step failed — episodes for items already in
+      # Webflow still match.
       - name: Podcast → Webflow
-        if: ${{ !inputs.skip_podcast }}
+        if: ${{ always() && !inputs.skip_podcast }}
         env:
           WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
         run: node sync-podcast.js ${{ inputs.dry_run && '--dry-run' || '' }} --report podcast-report.csv --verbose
 
-      # Last, so it reflects any speaker-s the podcast step just filled.
-      # Runs even if the podcast step failed — the two are independent, and a
-      # drifted speaker-text is worth fixing either way.
+      # Last, so it reflects any speaker-s the steps above just filled.
+      # Runs even if they failed — a drifted speaker-text is worth fixing either way.
       - name: Reconcile speaker text
         if: always()
         env:
