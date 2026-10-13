@@ -2,13 +2,13 @@
 #
 # Apple, Spotify and Webflow have no bot check, so they run fine on a cloud
 # runner — seconds per run. YouTube does NOT: it throttles and blocks
-# GitHub-hosted runner IPs, which is why sync-youtube.js is a separate,
-# manual-only workflow and why sync-all.js exists for running the whole thing
-# from a residential IP. See youtube-sync.yml for the evidence.
+# GitHub-hosted runner IPs, which is why sync-youtube.js is a separate
+# workflow that runs degraded here, and why sync-all.js exists for running the
+# whole thing from a residential IP. See youtube-sync.yml for the evidence.
 #
 # So "one combined sync" is two jobs by necessity, not by choice:
-#   here          — podcast links + speaker-text reconcile, daily, unattended
-#   youtube-sync  — the YouTube fetch, by hand, from a machine YouTube answers
+#   youtube-sync  — new videos into Webflow, daily at 14:00 UTC, unattended
+#   here          — podcast links + speaker-text reconcile, daily, an hour later
 name: Sync
 
 on:

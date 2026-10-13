@@ -1,4 +1,4 @@
-# YouTube -> Webflow sync. MANUAL ONLY - deliberately no schedule.
+# YouTube -> Webflow sync. Daily, plus by hand.
 #
 # YouTube throttles and blocks GitHub-hosted runner IPs. Evidence from this
 # project: on a residential IP an unauthenticated run degraded from 44s to 240s+
@@ -7,17 +7,23 @@
 # in days and a login session does not belong in CI secrets.
 #
 # Expect the per-video fetch to be refused here ("Sign in to confirm you're not
-# a bot"). That is NOT a broken run and no longer fails the job: the channel
+# a bot"). That is NOT a broken run and does not fail the job: the channel
 # listing still answers, so a video missing from Webflow is created from it with
-# the title, duration and type, and the fields only a full fetch knows are left
-# blank for a later run to fill. See "When YouTube won't answer" in the README.
+# the title, duration, type, date and thumbnail, and only the description and
+# transcript are left blank for a later run to fill. See "When YouTube won't
+# answer" in the README.
 #
-# So this workflow is the way to get new sermons onto the site quickly. To fill
-# in thumbnails, dates, descriptions and transcripts, re-run the sync from a
-# Mac: a launchd job, or a self-hosted runner registered to this repo.
-name: YouTube sync (manual)
+# That is enough to run unattended, so this is scheduled: new sermons land on
+# the site every day with nobody touching it. It runs an hour before sync.yml
+# because the podcast step matches episodes onto the items this one creates.
+# Descriptions and transcripts still need a run from a machine YouTube answers
+# (sync-all.js on a Mac); every scheduled run retries them meanwhile, since a
+# partial item is never marked synced.
+name: YouTube sync
 
 on:
+  schedule:
+    - cron: '0 14 * * *' # daily, 9am CT (14:00 UTC during CDT) - before sync.yml
   workflow_dispatch:
     inputs:
       dry_run:
@@ -51,4 +57,4 @@ jobs:
       - name: Sync
         env:
           WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
-        run: node sync-youtube.js ${{ inputs.dry_run && '--dry-run' || '' }} --max-work ${{ inputs.max_work }} --concurrency 2 --verbose
+        run: node sync-youtube.js ${{ inputs.dry_run && '--dry-run' || '' }} --max-work ${{ inputs.max_work || '15' }} --concurrency 2 --verbose
