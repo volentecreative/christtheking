@@ -1,0 +1,12 @@
+<!-- Filter drawer helpers (same block on /resources/study-tools). Approved by Josh 2026-10-13.
+  [data-scroll-fade]: sets --fade-top / --fade-bottom, which the element's style-panel mask-image reads, only while there is more content above / below. The style panel can't read scroll position.
+  [data-chips-mirror="<selector>"]: Finsweet List only renders the first chip template on a page, so the drawer's chip row copies the toolbar chips and forwards a click to the real chip's remove control. Finsweet recreates that row, so it is looked up fresh each time. -->
+<script>
+(()=>{document.querySelectorAll('[data-scroll-fade]').forEach(el=>{const u=()=>{el.style.setProperty('--fade-top',el.scrollTop>2?'2rem':'0rem');el.style.setProperty('--fade-bottom',el.scrollHeight-el.clientHeight-el.scrollTop>2?'2rem':'0rem')};
+el.addEventListener('scroll',u,{passive:true});const ro=new ResizeObserver(u);ro.observe(el);[...el.children].forEach(c=>ro.observe(c));u()});
+document.querySelectorAll('[data-chips-mirror]').forEach(m=>{const sel=m.dataset.chipsMirror,box=m.parentElement.children.length===1?m.parentElement:m;let h=null;
+const tags=()=>[...document.querySelectorAll(sel+' [fs-list-element="tag"]')].filter(t=>getComputedStyle(t).display!=='none'&&getComputedStyle(t.parentElement).display!=='none');
+const sync=()=>{const c=tags().map((t,i)=>{const k=t.cloneNode(true);k.querySelectorAll('[fs-list-element]').forEach(n=>n.removeAttribute('fs-list-element'));k.removeAttribute('fs-list-element');k.dataset.i=i;return k}),n=c.map(k=>k.outerHTML).join('');if(n===h)return;h=n;m.replaceChildren(...c);box.style.display=c.length?'':'none'};
+m.addEventListener('click',e=>{const k=e.target.closest('[data-i]');if(!k||(k.querySelector('button')&&!e.target.closest('button')))return;e.preventDefault();tags()[k.dataset.i]?.querySelector('[fs-list-element="tag-remove"]')?.click()});
+let q;new MutationObserver(rs=>{if(rs.every(r=>box.contains(r.target)))return;cancelAnimationFrame(q);q=requestAnimationFrame(sync)}).observe(document.querySelector(sel)?.parentElement||document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style','class']});sync()})})();
+</script>

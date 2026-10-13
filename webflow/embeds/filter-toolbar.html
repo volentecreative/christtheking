@@ -6,28 +6,65 @@
       style panel hides at tablet down (Study Tools) or everywhere (Media) when empty
     - hides that row's "Clear all" until two or more filters are active; with one, its
       chip's own x does the same job
-    - turns the Filters button from the button component's Secondary (outline) variant
-      into its base Primary (gold) while any filter is on, by dropping the variant class,
-      and adds a .filter-count badge with the number
+    - turns the Filters button from the button component's Secondary + White (white
+      outline) variants into its base Primary + Gold (solid gold) while any filter is on,
+      by dropping the two variant classes, and adds a .filter-count badge with the number
+    - writes the same number into every [data-filter-count] (the drawer title's pill),
+      hidden at zero
+  [data-sort-value] shows the selected option of the sort <select> in its control: the
+  select itself is stretched invisibly over the whole "Sort by …" control (style panel),
+  so a tap anywhere on it opens the native picker.
+  Scrolling chip rows (.media-filters_tags / .study-tools_tags, toolbar and drawer) get
+  --fade-left / --fade-right, which their tablet style-panel mask-image reads, only while
+  there are chips hidden on that side. A sideways swipe on the drawer's chip row stops at
+  the row: narthex's drawer scroll lock (v0.5.1) only lets a finger through to something
+  that scrolls vertically, so it cancelled every horizontal swipe there.
   [data-search-clear] buttons clear their sibling input (input event, so Finsweet
   refilters) and show only while it has a query. [data-placeholder] fills the input's
-  placeholder — the Webflow API can't set placeholders. -->
+  placeholder — the Webflow API can't set placeholders.
+  The <style> holds what the style panel can't: the Type / Speaker / … dropdown panels
+  fade in on open (Webflow's dropdown JS flips display, so the start state has to come
+  from @starting-style), the sort control's keyboard focus ring, and the tablet-down
+  Type pills (.is-pills combos on Media): their panel stays shown, and a pill turns gold
+  while its hidden checkbox is ticked — :has(:checked), which the style panel can't write. -->
+<style>
+.media-filters_panel.w-dropdown-list{opacity:0;translate:0 -0.25rem;transition:opacity 180ms ease-out,translate 180ms ease-out,display 180ms allow-discrete}
+.media-filters_panel.w-dropdown-list.w--open{opacity:1;translate:none}
+@starting-style{.media-filters_panel.w-dropdown-list.w--open{opacity:0;translate:0 -0.25rem}}
+@media (max-width:991px){.media-filters_panel.w-dropdown-list{transition:opacity 240ms cubic-bezier(.22,1,.36,1),translate 240ms cubic-bezier(.22,1,.36,1)}}
+@media (max-width:991px){.media-filters_panel.w-dropdown-list.is-pills{opacity:1;translate:none;transition:none}
+.media-filters_option.is-pills:has(:checked){background-color:var(--_theme---accent-01);border-color:var(--_theme---accent-01);color:var(--_theme---background-01)}
+.media-filters_option.is-pills:has(:focus-visible){outline:2px solid var(--_theme---accent-01);outline-offset:2px}}
+@media (prefers-reduced-motion:reduce){.media-filters_panel.w-dropdown-list{transition:none}}
+.media-filters_sort:has(select:focus-visible){outline:2px solid currentColor;outline-offset:2px;border-radius:100rem}
+</style>
 <script>
-(()=>{const V='w-variant-838657ca-8c90-cf9f-1e1a-656e026f8987';
+(()=>{const V=['w-variant-838657ca-8c90-cf9f-1e1a-656e026f8987','w-variant-39c5403a-6704-3e0d-69e6-8eda531f3eb0'];
 document.querySelectorAll('input[data-placeholder]').forEach(i=>{i.placeholder=i.dataset.placeholder});
 document.querySelectorAll('[data-search-clear]').forEach(b=>{const i=b.parentElement.querySelector('input');if(!i)return;const u=()=>b.classList.toggle('is-visible',!!i.value);
 i.addEventListener('input',u);b.addEventListener('click',()=>{i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));u();i.focus()});u()});
+document.querySelectorAll('[data-sort-value]').forEach(v=>{const s=v.closest('.media-filters_sort')?.querySelector('select');if(!s)return;const u=()=>{v.textContent=s.options[s.selectedIndex]?.text||''};s.addEventListener('change',u);u();setTimeout(u,1500)});
+const TAGS='.media-filters_tags,.study-tools_tags',fade=el=>{const m=el.scrollWidth-el.clientWidth;el.style.setProperty('--fade-left',el.scrollLeft>2?'1.5rem':'0rem');el.style.setProperty('--fade-right',m-el.scrollLeft>2?'1.5rem':'0rem')},
+fadeAll=()=>document.querySelectorAll(TAGS).forEach(fade);
+document.addEventListener('scroll',e=>{if(e.target.matches&&e.target.matches(TAGS))fade(e.target)},{capture:true,passive:true});
+addEventListener('resize',fadeAll);document.addEventListener('vci:modal:open',()=>requestAnimationFrame(fadeAll));
+document.querySelectorAll('[data-chips-mirror]').forEach(m=>{let x=0,y=0,h=null; // narthex's drawer scroll lock only lets vertical scrollers take a finger; keep a sideways swipe on the chip row away from it
+m.addEventListener('touchstart',e=>{x=e.touches[0].clientX;y=e.touches[0].clientY;h=null},{passive:true});
+m.addEventListener('touchmove',e=>{const t=e.touches[0];if(h===null)h=Math.abs(t.clientX-x)>Math.abs(t.clientY-y);if(h&&m.scrollWidth>m.clientWidth)e.stopPropagation()},{passive:true})});
 const row=document.querySelector('[data-active-row]');if(!row)return;
 const scope=row.closest('.study-tools_toolbar')||row,open=document.querySelector('[vci-modal="open"][vci-modal-key="filters"]'),
-link=open&&open.querySelector('a'),bt=open&&open.querySelector('.button-type'),sec=open?[...open.querySelectorAll('.'+V)]:[];
+link=open&&open.querySelector('a'),bt=open&&open.querySelector('.button-type'),
+vars=open?V.flatMap(c=>[...open.querySelectorAll('.'+c)].map(e=>[e,c])):[],pills=[...document.querySelectorAll('[data-filter-count]')];
 let badge=null;if(bt){badge=document.createElement('span');badge.className='filter-count';badge.setAttribute('aria-hidden','true');(bt.querySelector('.text-button')||bt.lastChild).after(badge)}
 const tagsBox=()=>scope.querySelector('[data-active-tags]'),
 live=()=>{const t=tagsBox();return t?[...t.querySelectorAll('[fs-list-element="tag"]')].filter(e=>getComputedStyle(e).display!=='none'):[]};
-const sync=()=>{const n=live().length; // writes below only when a value changes: the badge sits inside the observed toolbar on Study Tools
+const sync=()=>{const n=live().length,s=String(n); // writes below only when a value changes: the badge sits inside the observed toolbar on Study Tools
 row.classList.toggle('is-empty',!n);
 const clr=tagsBox()&&tagsBox().querySelector('[fs-list-element="clear"]');if(clr)clr.style.display=n>1?'':'none';
-sec.forEach(e=>e.classList.toggle(V,!n));
-if(badge&&badge.textContent!==String(n)){badge.textContent=n;badge.style.display=n?'':'none'}
-if(link)link.setAttribute('aria-label',n?'Filters, '+n+' active':'Filters')};
+vars.forEach(([e,c])=>e.classList.toggle(c,!n));
+if(badge&&badge.textContent!==s){badge.textContent=s;badge.style.display=n?'':'none'}
+pills.forEach(p=>{p.textContent=s;p.style.display=n?'':'none'});
+if(link)link.setAttribute('aria-label',n?'Filters, '+n+' active':'Filters');
+requestAnimationFrame(()=>requestAnimationFrame(fadeAll))};
 let q;new MutationObserver(()=>{cancelAnimationFrame(q);q=requestAnimationFrame(sync)}).observe(scope,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});sync()})();
 </script>

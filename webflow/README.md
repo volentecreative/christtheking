@@ -14,7 +14,8 @@ in the Designer.
 | `registered/reading-progress.js` | Site settings → Custom code → **Registered scripts**, as `readingProgress` (fills the gold `.navbar-progress_fill` inside the 2px `.navbar-progress` track on pages with a `[data-reading-progress]` element: Journals Template body, Beliefs, Elder Affirmation, Member Covenant; also writes "N min read" into any `[data-read-time]`) |
 | `embeds/media-template-crumbs-and-series.html` | Media Template page → the HTML Embed with class `breadcrumb-handler` |
 | `embeds/jump-menu.html` | Beliefs and Elder Affirmation pages → the jump-menu script HTML Embed (active-article tracking + the mobile Contents drawer extras; the drawer itself is narthex `vci-modal="drawer"` key `toc`) |
-| `embeds/filter-toolbar.html` | Media and Study Tools pages → Page settings → Custom code → **Before `</body>`** (toolbar state: chip row visibility, "Clear all" at 2+ filters, outline/gold Filters button with count badge, search clear button, input placeholders) |
+| `embeds/filter-toolbar.html` | Media and Study Tools pages → Page settings → Custom code → **Before `</body>`**, after the drawer helpers (toolbar state: chip row visibility, "Clear all" at 2+ filters, white-outline → gold Filters button with count badge, drawer-title count, "Sort by" value label, chip-row edge fades and drawer swipe fix, search clear button, input placeholders; `<style>` for dropdown open animation, Type pills' checked state and focus rings) |
+| `embeds/filter-drawer-helpers.html` | Same two page footers, first block (drawer list edge fades via `[data-scroll-fade]`, drawer chip row mirrored from the toolbar via `[data-chips-mirror]`). Study Tools has two page-specific blocks before it (sidebar scroll, checkbox sync) |
 
 The two custom-code blocks are the **post-migration** state: the shared
 behaviour has moved to [narthex](https://github.com/volentecreative/narthex),
