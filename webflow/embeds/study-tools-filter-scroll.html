@@ -1,0 +1,17 @@
+<!-- Filter → back to the catalog (Study Tools page footer, after the other blocks).
+  Ticking a filter re-sorts the list in place, so someone scrolled deep into it
+  sees nothing change. This brings the top of the results (#results-anchor:
+  toolbar + active chips + list) back under the header - but only when that top
+  is above the viewport, only once the ticking stops (500ms), and on tablet/phone
+  only when the Filters drawer closes, never while it is open. Smooth unless
+  reduced motion. The style panel can't react to a filter change. -->
+<script>
+(()=>{const a=document.getElementById('results-anchor'),g=document.querySelector('.study-tools_filter-groups');if(!a||!g)return;
+const rm=matchMedia('(prefers-reduced-motion: reduce)');let t=0,pending=false;
+const go=()=>{const h=document.querySelector('.navbar'),off=(h?h.getBoundingClientRect().bottom:0)+16,top=a.getBoundingClientRect().top;
+if(top>=off-1)return;scrollTo({top:scrollY+top-off,behavior:rm.matches?'auto':'smooth'})};
+const inDrawer=()=>!!(window.vci&&vci.modal&&vci.modal.isOpen('filters')&&matchMedia('(max-width: 991px)').matches);
+g.addEventListener('change',e=>{if(!e.target.matches('input'))return;if(inDrawer()){pending=true;return}clearTimeout(t);t=setTimeout(go,500)});
+document.addEventListener('vci:modal:close',()=>{if(!pending)return;pending=false;setTimeout(go,400)},true);
+})();
+</script>

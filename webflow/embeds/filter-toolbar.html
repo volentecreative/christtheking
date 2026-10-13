@@ -19,6 +19,10 @@
   there are chips hidden on that side. A sideways swipe on the drawer's chip row stops at
   the row: narthex's drawer scroll lock (v0.5.1) only lets a finger through to something
   that scrolls vertically, so it cancelled every horizontal swipe there.
+  Filters that arrive in the URL (?type_equal=Sermon from the nav, ?series_equal=… from a
+  sermon's series crumb, or Finsweet's own ["a","b"] lists) are applied by Finsweet but
+  their checkboxes stay unticked; each matching checkbox (by fs-list-field + operator +
+  fs-list-value) is ticked on load so the drawer and pills show what's filtered.
   [data-search-clear] buttons clear their sibling input (input event, so Finsweet
   refilters) and show only while it has a query. [data-placeholder] fills the input's
   placeholder — the Webflow API can't set placeholders.
@@ -51,6 +55,11 @@ addEventListener('resize',fadeAll);document.addEventListener('vci:modal:open',()
 document.querySelectorAll('[data-chips-mirror]').forEach(m=>{let x=0,y=0,h=null; // narthex's drawer scroll lock only lets vertical scrollers take a finger; keep a sideways swipe on the chip row away from it
 m.addEventListener('touchstart',e=>{x=e.touches[0].clientX;y=e.touches[0].clientY;h=null},{passive:true});
 m.addEventListener('touchmove',e=>{const t=e.touches[0];if(h===null)h=Math.abs(t.clientX-x)>Math.abs(t.clientY-y);if(h&&m.scrollWidth>m.clientWidth)e.stopPropagation()},{passive:true})});
+(()=>{const sync=()=>{const q=new URLSearchParams(location.search); // a filter that arrives in the URL (nav "Sermons" link, series crumb) is applied by Finsweet but never ticks its checkbox; tick it to match
+document.querySelectorAll('input[type=checkbox][fs-list-field][fs-list-value]').forEach(i=>{const raw=q.get(i.getAttribute('fs-list-field')+'_'+(i.getAttribute('fs-list-operator')||'equal'));if(raw===null)return;
+let vals;try{vals=JSON.parse(raw)}catch(e){vals=raw.split(',')}if(!Array.isArray(vals))vals=[vals];
+if(vals.map(v=>String(v).trim()).includes(i.getAttribute('fs-list-value'))&&!i.checked)i.checked=true})};
+sync();addEventListener('load',()=>setTimeout(sync,800))})();
 const row=document.querySelector('[data-active-row]');if(!row)return;
 const scope=row.closest('.study-tools_toolbar')||row,open=document.querySelector('[vci-modal="open"][vci-modal-key="filters"]'),
 link=open&&open.querySelector('a'),bt=open&&open.querySelector('.button-type'),
