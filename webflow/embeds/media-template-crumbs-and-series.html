@@ -17,7 +17,8 @@
       everything renumbers on its own. Order is the Date field. The same
       count drives the series Previous / Next links ([data-series-prev],
       [data-series-next]), and hides the date-order nav ([data-date-nav],
-      Finsweet previous-item / next-item) when the item is in a series.
+      Finsweet previous-item / next-item) when the item is in a series. The
+      current row gets .is-current and is centred in the playlist's scroll box.
    Source of truth: webflow/embeds/media-template-crumbs-and-series.html in the repo.
    =========================================================================== */
 (function () {
@@ -81,6 +82,19 @@
       var label = it.row.querySelector('[data-series-index]');
       if (label) label.textContent = pad((listed || n < index ? n : n + 1) + 1);
     });
+
+    /* The row being watched: .is-current (style panel: background + gold
+       edge) and scrolled to the middle of the playlist box. The box is
+       scrolled directly - scrollIntoView would move the whole page too. */
+    if (listed) {
+      var row = items[index].row;
+      row.classList.add('is-current');
+      var box = row.parentElement;
+      while (box && box !== document.body && !(box.scrollHeight > box.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+      if (box && box !== document.body) {
+        box.scrollTop += row.getBoundingClientRect().top - box.getBoundingClientRect().top - (box.clientHeight - row.offsetHeight) / 2;
+      }
+    }
 
     document.querySelectorAll('[data-series-count]').forEach(function (el) {
       el.textContent = (index + 1) + ' of ' + total;
