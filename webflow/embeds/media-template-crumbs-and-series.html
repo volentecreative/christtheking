@@ -14,8 +14,11 @@
    2. Series position. "3 of 11", "11 items", and the row numbers in the series
       playlist are all counted from the playlist itself. There is deliberately
       no "part number" CMS field to keep in sync: add a sermon to a series and
-      everything renumbers on its own. Order is the Date field.
-
+      everything renumbers on its own. Order is the Date field. The same
+      count drives the series Previous / Next links ([data-series-prev],
+      [data-series-next]), and hides the date-order nav ([data-date-nav],
+      Finsweet previous-item / next-item) when the item is in a series.
+   Source of truth: webflow/embeds/media-template-crumbs-and-series.html in the repo.
    =========================================================================== */
 (function () {
   'use strict';
@@ -85,6 +88,45 @@
     document.querySelectorAll('[data-series-total]').forEach(function (el) {
       el.textContent = total + (total === 1 ? ' item' : ' items');
     });
+
+    /* Previous / next within the series: "13 · Beware Men Like Tobiah". The
+       earlier part is Previous. At either end that side keeps its place but
+       is hidden, so the other one doesn't jump across the bar. */
+    var before = items[index - 1];
+    var after = listed ? items[index + 1] : items[index];
+    var partOf = function (it) {
+      var n = items.indexOf(it);
+      return (listed || n < index ? n : n + 1) + 1;
+    };
+    [['[data-series-prev]', before, 'Previous'], ['[data-series-next]', after, 'Next']].forEach(function (side) {
+      document.querySelectorAll(side[0]).forEach(function (a) {
+        var it = side[1];
+        var to = it && it.row.querySelector('a[href]');
+        if (!to) {
+          a.style.visibility = 'hidden';
+          a.setAttribute('aria-hidden', 'true');
+          a.setAttribute('tabindex', '-1');
+          return;
+        }
+        var heading = it.row.querySelector('h1, h2, h3, h4');
+        var title = heading ? heading.textContent.trim() : '';
+        var part = partOf(it);
+        a.href = to.getAttribute('href');
+        a.title = title;
+        a.setAttribute('aria-label', side[2] + ' in series: part ' + part + (title ? ', ' + title : ''));
+        var label = a.querySelector('[data-series-label]');
+        if (label) label.textContent = pad(part) + (title ? ' · ' + title : '');
+      });
+    });
+    if (total < 2) {
+      document.querySelectorAll('[data-series-prev], [data-series-next]').forEach(function (a) {
+        if (a.parentElement) a.parentElement.style.display = 'none';
+      });
+    }
+
+    /* A sermon in a series gets the series buttons above; the date-order
+       Previous / Next at the foot of the page is only for one-offs. */
+    document.querySelectorAll('[data-date-nav]').forEach(function (el) { el.style.display = 'none'; });
   }
 
   function init() { crumbs(); series(); }
