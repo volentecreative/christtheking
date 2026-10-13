@@ -77,7 +77,10 @@ localStorage.setItem('ctk-theme', isLight ? 'light' : 'dark');
   'use strict';
   function init() {
     var menu = document.querySelector('.sticky-menu');
-    if (!menu) return;
+    // Pages with their own jump-menu tracker (Beliefs, Elder Affirmation:
+    // [data-jump-toggle]) mark the active link themselves as .is-active.
+    // Running this too lit two different links, one row apart.
+    if (!menu || document.querySelector('[data-jump-toggle]')) return;
 
     var map = [];
     menu.querySelectorAll('a[href^="#"]').forEach(function (a) {
