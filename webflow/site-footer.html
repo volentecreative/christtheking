@@ -181,23 +181,25 @@
 }
 
 /* Full-width buttons where a phone has a whole row to give them: the mobile
-   menu's Connect / Get directions bar, and a filter drawer's "Show results".
-   The button component is fit-content everywhere else, so this is scoped by
-   container rather than set on the component's own classes. Two buttons
-   share a row while each keeps 10rem; narrower than that they stack. */
+   menu's Connect / Get directions bar, and a filter drawer's Clear filters /
+   Apply pair. The button component is fit-content everywhere else, so this is
+   scoped by container rather than set on the component's own classes. Two
+   buttons share a row while each keeps 10rem; narrower than that they stack.
+   (In the drawer each button sits in a wrapper carrying its behaviour:
+   fs-list-element="clear" or vci-modal="close".) */
 @media (max-width: 991px) {
   .filter-drawer_component .button-wrap {
-    align-items: center;
+    flex-wrap: nowrap;
   }
 
   .navbar_menu-actions > .button,
-  .filter-drawer_component .button-wrap > [vci-modal="close"] {
+  .filter-drawer_component .button-wrap > * {
     flex: 1 1 10rem;
     min-width: 0;
   }
 
   .navbar_menu-actions > .button,
-  .filter-drawer_component .button-wrap > [vci-modal="close"] > .button,
+  .filter-drawer_component .button-wrap > * > .button,
   .navbar_menu-actions > .button > .button-type,
   .filter-drawer_component .button-wrap .button-type {
     width: 100%;

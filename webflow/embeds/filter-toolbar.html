@@ -1,0 +1,33 @@
+<!-- Filter toolbar state (same block on /media and /resources/study-tools page footers).
+  Counts the active filter chips in [data-active-tags] (Finsweet List renders them; it
+  re-creates that container on every change, so it is looked up fresh inside the stable
+  [data-active-row] / .study-tools_toolbar each time) and:
+    - toggles .is-empty on [data-active-row] — the chips + result-count row, which the
+      style panel hides at tablet down (Study Tools) or everywhere (Media) when empty
+    - hides that row's "Clear all" until two or more filters are active; with one, its
+      chip's own x does the same job
+    - turns the Filters button from the button component's Secondary (outline) variant
+      into its base Primary (gold) while any filter is on, by dropping the variant class,
+      and adds a .filter-count badge with the number
+  [data-search-clear] buttons clear their sibling input (input event, so Finsweet
+  refilters) and show only while it has a query. [data-placeholder] fills the input's
+  placeholder — the Webflow API can't set placeholders. -->
+<script>
+(()=>{const V='w-variant-838657ca-8c90-cf9f-1e1a-656e026f8987';
+document.querySelectorAll('input[data-placeholder]').forEach(i=>{i.placeholder=i.dataset.placeholder});
+document.querySelectorAll('[data-search-clear]').forEach(b=>{const i=b.parentElement.querySelector('input');if(!i)return;const u=()=>b.classList.toggle('is-visible',!!i.value);
+i.addEventListener('input',u);b.addEventListener('click',()=>{i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));u();i.focus()});u()});
+const row=document.querySelector('[data-active-row]');if(!row)return;
+const scope=row.closest('.study-tools_toolbar')||row,open=document.querySelector('[vci-modal="open"][vci-modal-key="filters"]'),
+link=open&&open.querySelector('a'),bt=open&&open.querySelector('.button-type'),sec=open?[...open.querySelectorAll('.'+V)]:[];
+let badge=null;if(bt){badge=document.createElement('span');badge.className='filter-count';badge.setAttribute('aria-hidden','true');(bt.querySelector('.text-button')||bt.lastChild).after(badge)}
+const tagsBox=()=>scope.querySelector('[data-active-tags]'),
+live=()=>{const t=tagsBox();return t?[...t.querySelectorAll('[fs-list-element="tag"]')].filter(e=>getComputedStyle(e).display!=='none'):[]};
+const sync=()=>{const n=live().length; // writes below only when a value changes: the badge sits inside the observed toolbar on Study Tools
+row.classList.toggle('is-empty',!n);
+const clr=tagsBox()&&tagsBox().querySelector('[fs-list-element="clear"]');if(clr)clr.style.display=n>1?'':'none';
+sec.forEach(e=>e.classList.toggle(V,!n));
+if(badge&&badge.textContent!==String(n)){badge.textContent=n;badge.style.display=n?'':'none'}
+if(link)link.setAttribute('aria-label',n?'Filters, '+n+' active':'Filters')};
+let q;new MutationObserver(()=>{cancelAnimationFrame(q);q=requestAnimationFrame(sync)}).observe(scope,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});sync()})();
+</script>
