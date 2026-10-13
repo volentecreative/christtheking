@@ -1,0 +1,469 @@
+<!-- Christ the King — Media Template page → the HTML Embed inside .media-transcript
+     (last child, after .media-transcript_body). Source of truth for that embed.
+     Transcript rows, the playing-row mark, the YouTube link-up, and the transcript
+     tools: play/pause (tablet/phone drawer only), search, copy, download.
+     On tablet/phone .media-secondary is a narthex dialog (vci-modal="dialog",
+     key "transcript", inline at 992px+), opened by the "Read transcript" button;
+     on desktop it is the same card it always was. -->
+<style>
+  [data-t-row] {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.85rem;
+    align-items: start;
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    /* The playing row is marked by its left edge, as the playlist's active
+       row is by its border. Every row carries the 2px edge, transparent, so
+       the text doesn't shift when the mark moves. */
+    border-left: 2px solid transparent;
+    border-radius: 0 0.4rem 0.4rem 0;
+    cursor: pointer;
+    color: var(--_theme---text-03);
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  @media (hover: hover) {
+    [data-t-row]:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+  }
+  [data-t-row][data-t-active] {
+    color: var(--_theme---text-01);
+    border-left-color: var(--_theme---accent-01);
+  }
+  /* Matches .text-style-mono (font) at the .text-size-small size (0.875rem).
+     Values copied from those classes, not combo-classed, because the time
+     label is generated inside the CMS rich text and can't carry a class. */
+  [data-t-time] {
+    color: inherit;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  [data-t-text] {
+    display: block;
+    color: inherit;
+  }
+
+  /* Header: back/close (tablet down) · title · tools. The title and tools sit
+     on shared utility classes, so their layout inside this one header is set
+     here rather than on the classes. */
+  .media-transcript_header > h3 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-transcript-tools] {
+    margin-left: auto;
+    flex: none;
+  }
+  /* Icon state swaps: play ⇄ pause follows the player; copy shows a tick
+     for a moment after copying. */
+  [data-transcript-play]:not([data-playing]) [data-icon='pause'],
+  [data-transcript-play][data-playing] [data-icon='play'],
+  [data-transcript-copy]:not([data-done]) [data-icon='done'],
+  [data-transcript-copy][data-done] [data-icon='copy'] {
+    display: none;
+  }
+  [data-transcript-play][aria-disabled='true'] {
+    opacity: 0.4;
+    cursor: default;
+  }
+  /* Search row: the media page's search field (.media-filters_search /
+     .media-filters_input) re-used; its toolbar layout (full-width, first on
+     tablet, 14rem cap) is undone for this row. */
+  /* Closed until the search button opens it (Webflow drops a static
+     hidden attribute, so the open state is data-open). */
+  [data-transcript-search]:not([data-open]) {
+    display: none;
+  }
+  [data-transcript-search] .media-filters_search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    order: 0;
+  }
+  [data-transcript-search] .media-filters_input {
+    max-width: none;
+    min-width: 0;
+    min-height: 2.5rem;
+    padding-right: 1rem;
+    font-size: 16px;
+  }
+  [data-transcript-count]:empty {
+    display: none;
+  }
+  [data-transcript-count] {
+    flex: none;
+    min-width: 4.5em;
+    text-align: right;
+    white-space: nowrap;
+  }
+  ::highlight(transcript-match) {
+    background-color: color-mix(in srgb, var(--_theme---accent-01) 35%, transparent);
+    color: var(--_theme---text-01);
+  }
+  ::highlight(transcript-current) {
+    background-color: var(--_theme---accent-01);
+    color: var(--_theme---background-01);
+  }
+  .transcript-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  /* Tablet/phone drawer: clear of the notch and home bar, and the reading
+     text one step brighter (text-02) than the desktop card's text-03. */
+  @media (max-width: 991px) {
+    .media-secondary.is-visible {
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      background-color: var(--_theme---background-02);
+    }
+    .media-secondary [data-t-row] {
+      color: var(--_theme---text-02);
+    }
+    .media-secondary [data-t-row][data-t-active] {
+      color: var(--_theme---text-01);
+    }
+  }
+</style>
+<script>
+  (function () {
+    var player = null,
+      ready = false,
+      holdPause = false,
+      cues = [];
+    var d = document;
+    var reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    var $ = function (s, r) { return (r || d).querySelector(s); };
+
+    window.onYouTubeIframeAPIReady = function () {
+      init();
+    };
+    function api() {
+      if (window.YT && window.YT.Player) {
+        init();
+        return;
+      }
+      var t = d.createElement('script');
+      t.src = 'https://www.youtube.com/iframe_api';
+      d.head.appendChild(t);
+    }
+    function getIframe() {
+      return d.querySelector('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]');
+    }
+    function init() {
+      var ifr = getIframe();
+      if (!ifr || player) return;
+      if (ifr.src.indexOf('enablejsapi=1') === -1) {
+        ifr.src += (ifr.src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+      }
+      player = new YT.Player(ifr, {
+        events: {
+          onReady: function () {
+            ready = true;
+            syncPlay();
+          },
+          onStateChange: function (e) {
+            // A timestamp tapped in the drawer while the video had never been
+            // started: YouTube starts it on seekTo, so stop it straight away.
+            if (holdPause && e.data === 1) {
+              holdPause = false;
+              player.pauseVideo();
+            }
+            syncPlay();
+          },
+        },
+      });
+    }
+    function state() {
+      return player && ready && player.getPlayerState ? player.getPlayerState() : -1;
+    }
+    function inDrawer() {
+      return !!(window.vci && vci.modal && vci.modal.isOpen('transcript'));
+    }
+
+    /* Timestamps. On the desktop card a tap plays from that point, as it
+       always has. In the drawer it only moves the playhead: someone reading
+       along keeps control of whether the sermon is playing. */
+    function seek(s) {
+      if (!player || !ready) return;
+      if (inDrawer()) {
+        var st = state();
+        if (st === -1 || st === 5) holdPause = true;
+        player.seekTo(s, true);
+        return;
+      }
+      player.seekTo(s, true);
+      if (player.playVideo) player.playVideo();
+    }
+
+    /* ---------- play / pause (drawer header) ---------- */
+    var playBtn = $('[data-transcript-play]');
+    function syncPlay() {
+      if (!playBtn) return;
+      var on = state() === 1 || state() === 3;
+      playBtn.toggleAttribute('data-playing', on);
+      playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+      playBtn.setAttribute('aria-disabled', String(!ready));
+    }
+    if (playBtn) {
+      if (!getIframe()) {
+        playBtn.parentElement.style.display = 'none';
+      } else {
+        syncPlay();
+        playBtn.addEventListener('click', function () {
+          if (!ready) return;
+          holdPause = false;
+          if (state() === 1 || state() === 3) player.pauseVideo();
+          else player.playVideo();
+        });
+      }
+    }
+
+    function build() {
+      cues = [];
+      d.querySelectorAll('a[href^="#t="]').forEach(function (a) {
+        var s = parseFloat(a.getAttribute('href').slice(3));
+        if (isNaN(s)) return;
+        var row = a.closest('p,li') || a.parentElement;
+        if (!row) return;
+        row.setAttribute('data-t-row', '');
+        a.setAttribute('data-t-time', '');
+        if (!row.querySelector('[data-t-text]')) {
+          var span = d.createElement('span');
+          span.setAttribute('data-t-text', '');
+          var n = a.nextSibling;
+          while (n) {
+            var nx = n.nextSibling;
+            span.appendChild(n);
+            n = nx;
+          }
+          row.appendChild(span);
+        }
+        row.addEventListener('click', function (e) {
+          e.preventDefault();
+          seek(s);
+        });
+        cues.push({ s: s, row: row });
+      });
+      cues.sort(function (x, y) {
+        return x.s - y.s;
+      });
+      setInterval(function () {
+        if (!player || !ready || !player.getCurrentTime) return;
+        var t = player.getCurrentTime(),
+          act = null;
+        for (var i = 0; i < cues.length; i++) {
+          if (cues[i].s <= t + 0.3) act = cues[i];
+          else break;
+        }
+        cues.forEach(function (c) {
+          if (c === act) {
+            c.row.setAttribute('data-t-active', '');
+          } else {
+            c.row.removeAttribute('data-t-active');
+          }
+        });
+      }, 400);
+      tools();
+    }
+
+    /* ---------- copy · download · search ---------- */
+    function tools() {
+      var rt = $('[data-transcript]');
+      var body = $('.media-transcript_body');
+      var bar = $('[data-transcript-tools]');
+      if (!rt || !body || !bar) return;
+      var hasText = !!rt.textContent.trim();
+      bar.querySelectorAll('[data-transcript-search-toggle], [data-transcript-copy], [data-transcript-download]').forEach(function (b) {
+        b.style.display = hasText ? '' : 'none';
+      });
+      if (!hasText) return;
+
+      var live = d.createElement('span');
+      live.className = 'transcript-sr';
+      live.setAttribute('role', 'status');
+      bar.appendChild(live);
+      function say(msg) {
+        live.textContent = '';
+        setTimeout(function () { live.textContent = msg; }, 50);
+      }
+
+      // Plain text: "0:04  Please pray with me…", a blank line between rows.
+      function plain() {
+        var rows = rt.querySelectorAll('[data-t-row]');
+        if (!rows.length) return rt.innerText.trim();
+        return Array.prototype.map.call(rows, function (r) {
+          var t = r.querySelector('[data-t-time]'), x = r.querySelector('[data-t-text]');
+          return (t ? t.textContent.trim() + '  ' : '') + (x ? x.textContent : r.textContent).replace(/\s+/g, ' ').trim();
+        }).join('\n\n');
+      }
+      var title = ($('.media-title_wrap h1') || {}).textContent || d.title;
+      title = title.trim();
+
+      var copyBtn = $('[data-transcript-copy]');
+      var copyTimer = 0;
+      if (copyBtn) copyBtn.addEventListener('click', function () {
+        var text = plain();
+        var done = function () {
+          copyBtn.setAttribute('data-done', '');
+          copyBtn.setAttribute('aria-label', 'Transcript copied');
+          say('Transcript copied');
+          clearTimeout(copyTimer);
+          copyTimer = setTimeout(function () {
+            copyBtn.removeAttribute('data-done');
+            copyBtn.setAttribute('aria-label', 'Copy transcript');
+          }, 2000);
+        };
+        var fallback = function () {
+          var ta = d.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+          copyBtn.parentElement.appendChild(ta);
+          ta.select();
+          var ok = false;
+          try { ok = d.execCommand('copy'); } catch (e) {}
+          ta.remove();
+          copyBtn.focus();
+          if (ok) done(); else say('Copy failed');
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+        else fallback();
+      });
+
+      var dlBtn = $('[data-transcript-download]');
+      if (dlBtn) dlBtn.addEventListener('click', function () {
+        var speakers = Array.prototype.map.call(d.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) {
+          return n.textContent.trim();
+        }).filter(Boolean).join(', ');
+        var date = ($('[data-current-date]') || $('.media-meta') || {}).textContent || '';
+        var head = [title, [speakers, date.trim()].filter(Boolean).join(' · '), 'Christ the King Church', location.origin + location.pathname]
+          .filter(Boolean).join('\n');
+        var blob = new Blob([head + '\n\n' + plain() + '\n'], { type: 'text/plain;charset=utf-8' });
+        var slug = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'sermon';
+        var a = d.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = slug + '-transcript.txt';
+        d.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        say('Transcript downloaded');
+      });
+
+      /* Search: highlights through the CSS Custom Highlight API, so the
+         transcript's DOM (and its timestamp rows) is never rewritten. Where
+         that API is missing, matches are still counted and scrolled to. */
+      var row = $('[data-transcript-search]');
+      var toggle = $('[data-transcript-search-toggle]');
+      var input = row && $('[data-transcript-query]', row);
+      var count = row && $('[data-transcript-count]', row);
+      if (!row || !toggle || !input) return;
+      var HL = !!(window.CSS && CSS.highlights && window.Highlight);
+      var ranges = [], at = -1, qt = 0;
+
+      function clearHL() {
+        if (HL) { CSS.highlights.delete('transcript-match'); CSS.highlights.delete('transcript-current'); }
+      }
+      function find(q) {
+        ranges = []; at = -1;
+        clearHL();
+        q = q.trim().toLowerCase();
+        if (q.length < 2) { count.textContent = ''; return; }
+        var w = d.createTreeWalker(rt, NodeFilter.SHOW_TEXT, {
+          acceptNode: function (n) { return n.parentElement.closest('[data-t-time]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; },
+        });
+        var n;
+        while ((n = w.nextNode())) {
+          var s = n.data.toLowerCase(), i = s.indexOf(q);
+          while (i !== -1) {
+            var r = d.createRange();
+            r.setStart(n, i);
+            r.setEnd(n, i + q.length);
+            ranges.push(r);
+            i = s.indexOf(q, i + q.length);
+          }
+        }
+        if (HL && ranges.length) CSS.highlights.set('transcript-match', new Highlight(...ranges));
+        if (!ranges.length) { count.textContent = 'No matches'; return; }
+        go(0);
+      }
+      function go(i) {
+        if (!ranges.length) return;
+        at = (i + ranges.length) % ranges.length;
+        count.textContent = at + 1 + ' of ' + ranges.length;
+        var r = ranges[at];
+        if (HL) CSS.highlights.set('transcript-current', new Highlight(r));
+        var rr = r.getBoundingClientRect(), br = body.getBoundingClientRect();
+        if (rr.top < br.top + 8 || rr.bottom > br.bottom - 8) {
+          body.scrollTo({ top: body.scrollTop + rr.top - br.top - body.clientHeight / 3, behavior: reduced.matches ? 'auto' : 'smooth' });
+        }
+      }
+      function openSearch() {
+        row.setAttribute('data-open', '');
+        toggle.setAttribute('aria-expanded', 'true');
+        input.focus();
+        if (input.value) find(input.value);
+      }
+      function closeSearch() {
+        row.removeAttribute('data-open');
+        toggle.setAttribute('aria-expanded', 'false');
+        clearHL();
+        toggle.focus();
+      }
+      toggle.addEventListener('click', function () {
+        if (!row.hasAttribute('data-open')) openSearch(); else closeSearch();
+      });
+      input.addEventListener('input', function () {
+        clearTimeout(qt);
+        qt = setTimeout(function () { find(input.value); }, 150);
+      });
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); go(at + (e.shiftKey ? -1 : 1)); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSearch(); }
+      });
+      var prev = $('[data-transcript-prev]', row), next = $('[data-transcript-next]', row);
+      if (prev) prev.addEventListener('click', function () { go(at - 1); });
+      if (next) next.addEventListener('click', function () { go(at + 1); });
+
+      /* First time the drawer opens, start at the row that's playing (if
+         any); after that it keeps wherever the reader left it. */
+      var opened = false;
+      d.addEventListener('vci:modal:open', function (e) {
+        if (!e.detail || e.detail.key !== 'transcript' || opened) return;
+        opened = true;
+        var act = rt.querySelector('[data-t-active]');
+        if (act && body.scrollTop === 0) {
+          requestAnimationFrame(function () {
+            body.scrollTop += act.getBoundingClientRect().top - body.getBoundingClientRect().top - body.clientHeight / 3;
+          });
+        }
+      });
+    }
+
+    if (d.readyState !== 'loading') {
+      build();
+      api();
+    } else {
+      d.addEventListener('DOMContentLoaded', function () {
+        build();
+        api();
+      });
+    }
+  })();
+</script>

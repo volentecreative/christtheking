@@ -2,6 +2,23 @@
      (the embed with class .breadcrumb-handler, near the top of the page).
      Page-level footer code cannot be written on this template through the
      API, so the script lives in an embed. This file is its source of truth. -->
+<style>
+/* Tablet/phone: the series playlist is a narthex accordion (vci-accordion on
+   .media-series_playlist / .media-series_body), closed by default, so the
+   card is just its header ("More in …", the "13 of 16" toggle) and the
+   Previous / Next pair. Desktop keeps it open. The "16 items" count is the
+   toggle's job down here. */
+/* Desktop: undo narthex's collapse CSS (grid rows + overflow:hidden on the
+   child), which would clip the list instead of letting the 20rem box scroll. */
+@media (min-width: 992px) {
+  .media-series_playlist .media-series_body { display: block; }
+  .media-series_playlist .media-series_body > * { overflow: visible; }
+}
+@media (max-width: 991px) {
+  .media-series_playlist:not([vci-accordion-state="open"]) .media-series_body { display: none; }
+  [data-series-total] { display: none; }
+}
+</style>
 <script>
 /* ===========================================================================
    Media item page. Two jobs, both of which the style panel genuinely can't do.
@@ -142,9 +159,26 @@
     /* A sermon in a series gets the series buttons above; the date-order
        Previous / Next at the foot of the page is only for one-offs. */
     document.querySelectorAll('[data-date-nav]').forEach(function (el) { el.style.display = 'none'; });
+    return { total: total, index: index };
   }
 
-  function init() { crumbs(); series(); }
+  /* Desktop: always open. Tablet/phone: closed until the toggle is used.
+     narthex reads vci-accordion-open when it starts, after this has run. */
+  function disclosure(total, index) {
+    var item = document.querySelector('.media-series_playlist[vci-accordion="item"]');
+    if (!item) return;
+    var wide = matchMedia('(min-width: 992px)');
+    if (wide.matches) item.setAttribute('vci-accordion-open', 'true');
+    wide.addEventListener('change', function (e) {
+      if (e.matches && window.vci && vci.accordion) vci.accordion.open(item);
+    });
+    var t = item.querySelector('[data-series-toggle]');
+    if (!t) return;
+    if (total < 2) { t.parentElement.style.display = 'none'; return; }
+    t.setAttribute('aria-label', 'Part ' + (index + 1) + ' of ' + total + '. Show all parts');
+  }
+
+  function init() { crumbs(); var s = series(); disclosure(s ? s.total : 0, s ? s.index : 0); }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
