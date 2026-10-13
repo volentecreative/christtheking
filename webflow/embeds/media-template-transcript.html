@@ -1,10 +1,11 @@
 <!-- Christ the King — Media Template page → the HTML Embed inside .media-transcript
      (last child, after .media-transcript_body). Source of truth for that embed.
-     Transcript rows, the playing-row mark, the YouTube link-up, and the transcript
-     tools: play/pause (tablet/phone drawer only), search, copy, download.
-     On tablet/phone .media-secondary is a narthex dialog (vci-modal="dialog",
-     key "transcript", inline at 992px+), opened by the "Read transcript" button;
-     on desktop it is the same card it always was. -->
+     Transcript rows, the playing-row mark, follow-along, the YouTube link-up, and
+     the transcript tools: search, copy, download; expand / play-pause / close on
+     tablet/phone. There the transcript is an inline 22rem box (follows the
+     sermon while it plays) whose expand button opens the same box as a bottom
+     sheet: .media-secondary is a narthex drawer (vci-modal="drawer", key
+     "transcript", inline at 992px+), .media-transcript its sheet part. -->
 <style>
   [data-t-row] {
     display: grid;
@@ -34,6 +35,15 @@
     color: var(--_theme---text-01);
     border-left-color: var(--_theme---accent-01);
   }
+  /* The transcript is timed about every 45 seconds. Within the playing row,
+     each sentence's start is estimated from its length, and every sentence
+     but the current one steps back a shade, so the reading place moves. */
+  [data-t-row][data-t-active] [data-t-s]:not([data-t-now]) {
+    color: var(--_theme---text-02);
+  }
+  [data-t-s] {
+    transition: color 0.2s ease;
+  }
   /* Matches .text-style-mono (font) at the .text-size-small size (0.875rem).
      Values copied from those classes, not combo-classed, because the time
      label is generated inside the CMS rich text and can't carry a class. */
@@ -54,7 +64,7 @@
     color: inherit;
   }
 
-  /* Header: back/close (tablet down) · title · tools. The title and tools sit
+  /* Header: title · tools (inside the sheet's drag handle). The title and tools sit
      on shared utility classes, so their layout inside this one header is set
      here rather than on the classes. */
   .media-transcript_header > h3 {
@@ -125,13 +135,45 @@
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  /* Tablet/phone drawer: clear of the notch and home bar, and the reading
-     text one step brighter (text-02) than the desktop card's text-03. */
+  /* Header buttons by context. Desktop card: search, copy, download.
+     Tablet/phone box: + expand. Sheet: + play/pause and close, no expand. */
+  [data-transcript-expand],
+  [data-transcript-close],
+  [data-transcript-play],
+  [data-transcript-grab],
+  .media-secondary > [vci-modal='scrim'] {
+    display: none;
+  }
+  .media-transcript.is-visible [data-transcript-close],
+  .media-transcript.is-visible [data-transcript-play] {
+    display: flex;
+  }
+  /* The sheet's grab bar (same as the Filters drawer's). */
+  .media-transcript.is-visible [data-transcript-grab] {
+    display: block;
+    width: 40px;
+    height: 4px;
+    margin: 0 auto 0.25rem;
+    border-radius: 2px;
+    background-color: currentColor;
+    opacity: 0.35;
+  }
   @media (max-width: 991px) {
-    .media-secondary.is-visible {
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-      background-color: var(--_theme---background-02);
+    [data-transcript-expand] {
+      display: flex;
     }
+    .media-transcript.is-visible [data-transcript-expand] {
+      display: none;
+    }
+    .media-secondary.is-visible > [vci-modal='scrim'] {
+      display: block;
+      position: fixed;
+      z-index: 1000;
+    }
+    .media-transcript.is-visible {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    /* Reading text one step brighter (text-02) than the desktop card's. */
     .media-secondary [data-t-row] {
       color: var(--_theme---text-02);
     }
@@ -211,7 +253,7 @@
       if (player.playVideo) player.playVideo();
     }
 
-    /* ---------- play / pause (drawer header) ---------- */
+    /* ---------- play / pause (sheet header) ---------- */
     var playBtn = $('[data-transcript-play]');
     function syncPlay() {
       if (!playBtn) return;
@@ -222,7 +264,7 @@
     }
     if (playBtn) {
       if (!getIframe()) {
-        playBtn.parentElement.style.display = 'none';
+        playBtn.style.display = 'none';
       } else {
         syncPlay();
         playBtn.addEventListener('click', function () {
@@ -232,6 +274,28 @@
           else player.playVideo();
         });
       }
+    }
+
+    /* Split a row's text into sentences and give each an estimated start,
+       spread between this timestamp and the next by length (the last row
+       assumes about 14 characters a second). Only plain-text rows are split. */
+    function sentences(row, start, end) {
+      var span = row.querySelector('[data-t-text]');
+      if (!span || span.childNodes.length !== 1 || span.firstChild.nodeType !== 3) return [];
+      var text = span.firstChild.data;
+      var parts = text.match(/[^.!?]+(?:[.!?]+["'\u201d\u2019)\]]*|$)\s*/g);
+      if (!parts || parts.length < 2) return [];
+      var total = text.length, span2 = end === null ? total / 14 : end - start, done = 0, out = [];
+      span.textContent = '';
+      parts.forEach(function (p) {
+        var el = d.createElement('span');
+        el.setAttribute('data-t-s', '');
+        el.textContent = p;
+        span.appendChild(el);
+        out.push({ el: el, at: start + (span2 * done) / total });
+        done += p.length;
+      });
+      return out;
     }
 
     function build() {
@@ -263,6 +327,28 @@
       cues.sort(function (x, y) {
         return x.s - y.s;
       });
+      cues.forEach(function (c, i) {
+        var next = cues[i + 1];
+        c.sents = sentences(c.row, c.s, next ? next.s : null);
+      });
+
+      var body = $('.media-transcript_body');
+      var row = null, sent = null, quietUntil = 0;
+      // A reader scrolling the box takes it over; following resumes a few
+      // seconds after they stop.
+      if (body) ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(function (ev) {
+        body.addEventListener(ev, function () { quietUntil = Date.now() + 5000; }, { passive: true });
+      });
+      function follow(el) {
+        if (!body || !el || Date.now() < quietUntil) return;
+        var search = $('[data-transcript-search]');
+        if (search && search.hasAttribute('data-open')) return;
+        var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
+        var target = body.scrollTop + er.top - br.top - body.clientHeight / 3;
+        if (Math.abs(target - body.scrollTop) < 4) return;
+        body.scrollTo({ top: Math.max(0, target), behavior: reduced.matches ? 'auto' : 'smooth' });
+      }
+
       setInterval(function () {
         if (!player || !ready || !player.getCurrentTime) return;
         var t = player.getCurrentTime(),
@@ -271,13 +357,25 @@
           if (cues[i].s <= t + 0.3) act = cues[i];
           else break;
         }
-        cues.forEach(function (c) {
-          if (c === act) {
-            c.row.setAttribute('data-t-active', '');
-          } else {
-            c.row.removeAttribute('data-t-active');
-          }
-        });
+        var now = null;
+        if (act && act.sents.length) {
+          now = act.sents[0];
+          act.sents.forEach(function (x) { if (x.at <= t + 0.3) now = x; });
+        }
+        if ((act && act.row) !== row) {
+          if (row) row.removeAttribute('data-t-active');
+          row = act ? act.row : null;
+          if (row) row.setAttribute('data-t-active', '');
+        }
+        var el = now ? now.el : null;
+        if (el !== sent) {
+          if (sent) sent.removeAttribute('data-t-now');
+          sent = el;
+          if (sent) sent.setAttribute('data-t-now', '');
+        }
+        // Follow the sermon while it plays: the current sentence (or row)
+        // a third of the way down the box.
+        if (state() === 1) follow(sent || row);
       }, 400);
       tools();
     }
@@ -440,20 +538,6 @@
       var prev = $('[data-transcript-prev]', row), next = $('[data-transcript-next]', row);
       if (prev) prev.addEventListener('click', function () { go(at - 1); });
       if (next) next.addEventListener('click', function () { go(at + 1); });
-
-      /* First time the drawer opens, start at the row that's playing (if
-         any); after that it keeps wherever the reader left it. */
-      var opened = false;
-      d.addEventListener('vci:modal:open', function (e) {
-        if (!e.detail || e.detail.key !== 'transcript' || opened) return;
-        opened = true;
-        var act = rt.querySelector('[data-t-active]');
-        if (act && body.scrollTop === 0) {
-          requestAnimationFrame(function () {
-            body.scrollTop += act.getBoundingClientRect().top - body.getBoundingClientRect().top - body.clientHeight / 3;
-          });
-        }
-      });
     }
 
     if (d.readyState !== 'loading') {
