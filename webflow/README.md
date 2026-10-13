@@ -12,6 +12,7 @@ in the Designer.
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 | `registered/scroll-to-top.js` | Site settings → Custom code → **Registered scripts**, as `scrollToTop` (drives `.scroll-to-top_button` in the footer component) |
 | `embeds/media-template-crumbs-and-series.html` | Media Template page → the HTML Embed with class `breadcrumb-handler` |
+| `embeds/jump-menu.html` | Beliefs and Elder Affirmation pages → the jump-menu script HTML Embed (active-article tracking + the mobile Contents drawer extras; the drawer itself is narthex `vci-modal="drawer"` key `toc`) |
 
 The two custom-code blocks are the **post-migration** state: the shared
 behaviour has moved to [narthex](https://github.com/volentecreative/narthex),
