@@ -483,19 +483,20 @@ videos and finishes in well under a minute.
 
 ## Running it on a schedule (GitHub Actions)
 
-Both workflows run daily, unattended, using the `WEBFLOW_API_TOKEN` (and, for
-the podcast, `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`) repository secrets:
+`.github/workflows/sync.yml` runs the whole cloud pipeline daily at 15:00 UTC,
+unattended, using the `WEBFLOW_API_TOKEN` (and, for the podcast,
+`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`) repository secrets. One job, in
+order:
 
-| Workflow | When (UTC) | Does |
-|---|---|---|
-| `youtube-sync.yml` | 14:00 | new videos into Webflow |
-| `sync.yml` | 15:00 | podcast links, then speaker-text reconcile |
+1. `sync-youtube.js` — new videos into Webflow
+2. `sync-podcast.js` — podcast links, matched onto the items step 1 created
+3. `reconcile-speakers.js` — speaker-text
 
-YouTube runs first because the podcast step matches episodes onto the items it
-creates. Both can also be run by hand from the Actions tab; a manual YouTube run
-defaults to dry-run, a scheduled one writes.
+Each step runs even if an earlier one failed. It can also be run by hand from
+the Actions tab, with switches for dry-run and for skipping YouTube or the
+podcast.
 
-**YouTube blocks GitHub-hosted runner IPs**, so the scheduled YouTube run takes
+**YouTube blocks GitHub-hosted runner IPs**, so the scheduled YouTube step takes
 the [partial path](#when-youtube-wont-answer): new sermons appear with title,
 date, thumbnail, speaker and series, but no description or transcript. Each
 daily run retries those, and `npm run all` from a Mac (or a self-hosted runner,
