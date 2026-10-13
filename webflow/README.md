@@ -10,6 +10,7 @@ in the Designer.
 | `site-head.html` | Site settings → Custom code → **Head** |
 | `site-footer.html` | Site settings → Custom code → **Footer** |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
+| `registered/scroll-to-top.js` | Site settings → Custom code → **Registered scripts**, as `scrollToTop` (drives `.scroll-to-top_button` in the footer component) |
 | `embeds/media-template-crumbs-and-series.html` | Media Template page → the HTML Embed with class `breadcrumb-handler` |
 
 The two custom-code blocks are the **post-migration** state: the shared
