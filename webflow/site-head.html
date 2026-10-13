@@ -122,3 +122,44 @@ localStorage.setItem('ctk-theme', isLight ? 'light' : 'dark');
   }
 })();
 </script>
+
+<!-- ===========================================================
+     AUDIT FIXES 2026-10-13 (Claude, approved by Josh)
+     Why custom code: neither rule can be written in the style panel.
+       1. .media-card:hover .media-card-background is a descendant-hover
+          selector. It used to live as an HTML embed INSIDE the media-card
+          component, so every card on the media page shipped its own copy
+          (140+ <style> tags). One copy here, embed removed from the component.
+       2. scroll-margin-top below 992px: the sticky jump-menu bar
+          (.sticky-menu-wrap) sits under the header on tablet/phone, so a
+          jump target needs extra clearance there or its heading lands
+          under the bar. narthex's vci-scroll-offset is one value for all
+          widths; this adds the bar's height only where the bar exists.
+       3. -webkit-tap-highlight-color (the style panel rejects the
+          property): mobile browsers paint a translucent box over whatever
+          is tapped — gray on iOS — which flashed as an outline around the
+          mobile menu's dropdown rows on every open and close. The site's
+          own hover/active states are the tap feedback; keyboard focus
+          rings are unaffected.
+     =========================================================== -->
+<style>
+@media (hover: hover) and (pointer: fine) {
+  .media-card .media-card-background {
+    transition: opacity 100ms ease, transform 150ms ease;
+  }
+  .media-card:hover .media-card-background {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 991px) {
+  .numbered-content {
+    scroll-margin-top: 4rem;
+  }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+</style>
