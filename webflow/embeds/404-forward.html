@@ -1,0 +1,7 @@
+<!-- Christ the King — Utility page "404" → Page settings → Custom code → Inside <head>.
+     Sends every missing URL to the regular /page-not-found page, which is built
+     from site components in the Designer (and marked noindex in its own head
+     code). replace() keeps the dead URL out of the back-button history; ?from=
+     carries it along in case the page ever wants to show or report it.
+     Why custom code: Webflow has no setting to point 404s at a normal page. -->
+<script>location.replace('/page-not-found?from=' + encodeURIComponent(location.pathname + location.search));</script>

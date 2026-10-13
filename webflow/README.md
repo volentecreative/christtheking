@@ -16,6 +16,7 @@ in the Designer.
 | `embeds/jump-menu.html` | Beliefs and Elder Affirmation pages → the jump-menu script HTML Embed (active-article tracking + the mobile Contents drawer extras; the drawer itself is narthex `vci-modal="drawer"` key `toc`) |
 | `embeds/filter-toolbar.html` | Media and Study Tools pages → Page settings → Custom code → **Before `</body>`**, after the drawer helpers (toolbar state: chip row visibility, "Clear all" at 2+ filters, white-outline → gold Filters button with count badge, drawer-title count, "Sort by" value label, chip-row edge fades and drawer swipe fix, search clear button, input placeholders; `<style>` for dropdown open animation, Type pills' checked state and focus rings) |
 | `embeds/filter-drawer-helpers.html` | Same two page footers, first block (drawer list edge fades via `[data-scroll-fade]`, drawer chip row mirrored from the toolbar via `[data-chips-mirror]`). Study Tools has two page-specific blocks before it (sidebar scroll, checkbox sync) |
+| `embeds/404-forward.html` | Utility page **404** → Page settings → Custom code → **Inside `<head>`** (forwards every 404 to `/page-not-found`, a normal page built from components) |
 
 The two custom-code blocks are the **post-migration** state: the shared
 behaviour has moved to [narthex](https://github.com/volentecreative/narthex),
