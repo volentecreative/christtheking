@@ -103,20 +103,31 @@
   @starting-style {
     .nav_dropdown-list.w-dropdown-list.w--open { opacity: 0; }
   }
-
-  .navbar_dropdown-toggle .chevron_down {
-    transition: transform 200ms ease-out;
-  }
-
-  .navbar_dropdown-toggle.w--open .chevron_down {
-    transform: rotate(180deg);
-  }
 }
 
+/* The chevron flips at every width: the mobile menu's toggles get w--open
+   from the same dropdown JS as desktop's. */
+.navbar_dropdown-toggle .chevron_down {
+  transition: transform 200ms ease-out;
+}
+
+.navbar_dropdown-toggle.w--open .chevron_down {
+  transform: rotate(180deg);
+}
+
+/* Mobile easing front-loads the motion so a tap answers at once: opening one
+   item closes the other, and with plain ease-out both crawled through their
+   first frames together. */
 @media (max-width: 991px) {
+  .navbar_dropdown-toggle .chevron_down {
+    transition: transform 240ms cubic-bezier(.22, 1, .36, 1);
+  }
+
   .nav_dropdown-list.w-dropdown-list {
-    transition: grid-template-rows 200ms ease-out, padding 200ms ease-out,
-                border-width 200ms ease-out, display 200ms allow-discrete;
+    transition: grid-template-rows 240ms cubic-bezier(.22, 1, .36, 1),
+                padding 240ms cubic-bezier(.22, 1, .36, 1),
+                border-width 240ms cubic-bezier(.22, 1, .36, 1),
+                display 240ms allow-discrete;
   }
 
   .nav_dropdown-list.w-dropdown-list:not(.w--open) {
@@ -145,15 +156,64 @@
     }
   }
 
-  /* A row can only collapse if what sits in it may be clipped. */
+  /* A row can only collapse if what sits in it may be clipped — and only as
+     far as its own padding allows. The link list carries 12px top and bottom,
+     which held the closing row at 24px (a strip of the list's background) and
+     then let it snap to nothing when display flipped. Its padding slides to
+     zero with the row. */
   .nav_dropdown-list.w-dropdown-list > * {
     overflow: hidden;
     min-height: 0;
+    transition: padding 240ms cubic-bezier(.22, 1, .36, 1);
+  }
+
+  .nav_dropdown-list.w-dropdown-list:not(.w--open) > * {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  @starting-style {
+    .nav_dropdown-list.w-dropdown-list.w--open > * {
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+  }
+}
+
+/* Full-width buttons where a phone has a whole row to give them: the mobile
+   menu's Connect / Get directions bar, and a filter drawer's Clear filters /
+   Apply pair. The button component is fit-content everywhere else, so this is
+   scoped by container rather than set on the component's own classes. Two
+   buttons share a row while each keeps 10rem; narrower than that they stack.
+   (In the drawer each button sits in a wrapper carrying its behaviour:
+   fs-list-element="clear" or vci-modal="close".) */
+@media (max-width: 991px) {
+  .filter-drawer_component .button-wrap {
+    flex-wrap: nowrap;
+  }
+
+  .navbar_menu-actions > .button,
+  .filter-drawer_component .button-wrap > * {
+    flex: 1 1 10rem;
+    min-width: 0;
+  }
+
+  .navbar_menu-actions > .button,
+  .filter-drawer_component .button-wrap > * > .button,
+  .navbar_menu-actions > .button > .button-type,
+  .filter-drawer_component .button-wrap .button-type {
+    width: 100%;
+  }
+
+  .navbar_menu-actions > .button > .button-type,
+  .filter-drawer_component .button-wrap .button-type {
+    justify-content: center;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav_dropdown-list.w-dropdown-list { transition: none; }
+  .nav_dropdown-list.w-dropdown-list,
+  .nav_dropdown-list.w-dropdown-list > * { transition: none; }
   .navbar_dropdown-toggle .chevron_down { transition: none; }
 }
 </style>
@@ -178,7 +238,14 @@
     let held = null;
     let timer = 0;
 
-    const release = () => {
+    /* transitionend bubbles, and every link inside the list has its own 200ms
+       hover transition. Ending the hold on any of them drops the geometry at
+       whatever moment the pointer last crossed a link, which is the jump this
+       exists to prevent. Only the list's own opacity fade counts. release() is
+       also called bare on open and by the timer below, so no event at all
+       still means release now. */
+    const release = (event) => {
+      if (event && (event.target !== list || event.propertyName !== 'opacity')) return;
       clearTimeout(timer);
       PROPS.forEach((prop) => list.style.removeProperty(prop));
       list.removeEventListener('transitionend', release);
@@ -296,7 +363,40 @@
   pointer-events: auto;
 }
 
+/* The panel itself. The Designer opens it by animating max-height and
+   min-height (0 → the viewport below the header) under `transition: all`,
+   and steps padding-top 0 → 1rem as it goes — a layout pass on every frame
+   and a jump at the start, which is the jank. Here it keeps its open size
+   while shut and is revealed instead: clip-path wipes it down from the header,
+   with a short fade and a 0.5rem settle, all paint/compositor work. The sizes
+   are the same values the Designer gives .navbar_menu.is-open. visibility
+   waits for the wipe to finish on close, then takes the shut panel out of the
+   tab order and away from taps. */
 @media (max-width: 991px) {
+  .navbar_menu {
+    min-height: calc(100dvh - var(--nav-offset, 6rem));
+    max-height: calc(100dvh - var(--nav-offset, 6rem));
+    padding-top: 1rem;
+    clip-path: inset(0 0 100% 0);
+    opacity: 0;
+    transform: translateY(-0.5rem);
+    visibility: hidden;
+    pointer-events: none;
+    transition: clip-path 360ms cubic-bezier(.22, 1, .36, 1),
+                transform 360ms cubic-bezier(.22, 1, .36, 1),
+                opacity 200ms ease-out,
+                visibility 0s linear 360ms;
+  }
+
+  .navbar_menu.is-open {
+    clip-path: inset(0);
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
   .navbar_hamburger_line {
     transition: transform 200ms ease-out;
   }
@@ -311,7 +411,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .navbar_hamburger_line { transition: none; }
+  .navbar_hamburger_line,
+  .navbar_menu { transition: none; }
 }
 </style>
 

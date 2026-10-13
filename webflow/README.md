@@ -11,9 +11,10 @@ in the Designer.
 | `site-footer.html` | Site settings → Custom code → **Footer** |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 | `registered/scroll-to-top.js` | Site settings → Custom code → **Registered scripts**, as `scrollToTop` (drives `.scroll-to-top_button` in the footer component) |
-| `registered/reading-progress.js` | Site settings → Custom code → **Registered scripts**, as `readingProgress` (fills `.navbar-progress` in the navbar component on pages with a `[data-reading-progress]` element: Journals Template body, Beliefs, Elder Affirmation, Member Covenant) |
+| `registered/reading-progress.js` | Site settings → Custom code → **Registered scripts**, as `readingProgress` (fills the gold `.navbar-progress_fill` inside the 2px `.navbar-progress` track on pages with a `[data-reading-progress]` element: Journals Template body, Beliefs, Elder Affirmation, Member Covenant; also writes "N min read" into any `[data-read-time]`) |
 | `embeds/media-template-crumbs-and-series.html` | Media Template page → the HTML Embed with class `breadcrumb-handler` |
 | `embeds/jump-menu.html` | Beliefs and Elder Affirmation pages → the jump-menu script HTML Embed (active-article tracking + the mobile Contents drawer extras; the drawer itself is narthex `vci-modal="drawer"` key `toc`) |
+| `embeds/filter-toolbar.html` | Media and Study Tools pages → Page settings → Custom code → **Before `</body>`** (toolbar state: chip row visibility, "Clear all" at 2+ filters, outline/gold Filters button with count badge, search clear button, input placeholders) |
 
 The two custom-code blocks are the **post-migration** state: the shared
 behaviour has moved to [narthex](https://github.com/volentecreative/narthex),
