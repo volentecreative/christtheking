@@ -1,0 +1,190 @@
+<!-- Jump menu: active-article tracking + the extras the mobile Contents drawer needs.
+     narthex owns the drawer itself (vci-modal="drawer", key "toc"): open/close, scrim,
+     swipe, Escape, focus trap, scroll lock, aria-expanded on the toggle. This script only:
+       - marks the article in view (.is-active + aria-current) and mirrors its number and
+         title into the sticky toggle, cycling them in the scroll direction (tablet down)
+       - centres the active link in the list as the drawer opens
+       - sets --fade-top/--fade-bottom on [data-jump-list] for the style-panel edge fade
+       - adds .is-open to .sticky-menu-wrap while the drawer is painted: the sticky bar is a
+         stacking context, and the fixed drawer inside it has to clear the navbar
+       - gives the toggle (a div role=button) Enter/Space
+       - parks jumped-to articles just under the sticky bar on mobile: narthex's
+         :target scroll-margin only clears the navbar, so each target gets the bar's
+         real height inline (cleared again on desktop)
+     A link tap closes the drawer and the browser does the anchor scroll (vci-scroll="native":
+     smooth unless reduced motion, hash and focus handled natively). Transform and
+     opacity only; the cycle is skipped for reduced motion. -->
+<script>
+(function () {
+  function init() {
+    var menu = document.querySelector('.sticky-menu');
+    if (!menu) return;
+    var wrap = menu.closest('.sticky-menu-wrap');
+    var list = menu.querySelector('[data-jump-list]') || menu;
+    var host = menu.closest('[vci-modal="drawer"]');
+    var toggle = wrap ? wrap.querySelector('[data-jump-toggle]') : null;
+    var label = toggle ? toggle.querySelector('[data-jump-label]') : null;
+    var num = toggle ? toggle.querySelector('[data-jump-num]') : null;
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    var items = [];
+    Array.prototype.forEach.call(menu.querySelectorAll('a[href*="#"]'), function (link) {
+      var hash = link.getAttribute('href').split('#')[1];
+      var target = hash ? document.getElementById(hash) : null;
+      if (target) items.push({ link: link, target: target });
+    });
+    if (!items.length) return;
+
+    var current = -1;
+    var ticking = false;
+
+    // Tablet down the toggle is showing and the list lives in the drawer.
+    function isMobile() {
+      return !!toggle && toggle.offsetParent !== null;
+    }
+    function modal() {
+      return window.vci && window.vci.modal;
+    }
+    function fade() {
+      list.style.setProperty('--fade-top', list.scrollTop > 2 ? '1.5rem' : '0rem');
+      list.style.setProperty('--fade-bottom', list.scrollHeight - list.clientHeight - list.scrollTop > 2 ? '1.5rem' : '0rem');
+    }
+
+    // Y position the active article has to cross: below the pinned bar on
+    // mobile, below the sticky navbar on desktop. Never above where an anchor
+    // click actually parks the article (its scroll-margin-top) — otherwise the
+    // clicked article stops just short of the line and the previous one stays lit.
+    function lineY() {
+      var landing = parseFloat(getComputedStyle(items[0].target).scrollMarginTop) || 0;
+      var bar;
+      if (isMobile() && wrap) {
+        bar = wrap.getBoundingClientRect().bottom + 16;
+      } else {
+        var nav = document.querySelector('.navbar');
+        bar = (nav ? nav.getBoundingClientRect().bottom : 72) + 16;
+      }
+      return Math.max(bar, landing + 8);
+    }
+
+    // Centre the link in whichever element scrolls: the drawer's list on
+    // mobile, the sidebar on desktop.
+    function reveal(link, instant) {
+      var sc = isMobile() ? list : menu;
+      if (sc.scrollHeight <= sc.clientHeight + 1) return;
+      var mr = sc.getBoundingClientRect();
+      var lr = link.getBoundingClientRect();
+      sc.scrollTo({
+        top: sc.scrollTop + (lr.top - mr.top) - (mr.height - lr.height) / 2,
+        behavior: instant ? 'auto' : 'smooth'
+      });
+    }
+
+    // The toggle mirrors the active item: its "01" number goes in [data-jump-num],
+    // its title in [data-jump-label], each styled like the desktop item.
+    function titleOf(link) {
+      var t = link.querySelector('.text-weight-bold');
+      return (t || link).textContent.trim();
+    }
+    function numberOf(link) {
+      var n = link.querySelector('.text-style-mono');
+      return n ? n.textContent.trim() : '';
+    }
+
+    // Down the page: the new title rises in from below. Up: it drops in from above.
+    function cycle(dir) {
+      if (!isMobile() || reduce.matches) return;
+      var from = 'translateY(' + (dir * 60) + '%)';
+      [num, label].forEach(function (el) {
+        if (el && el.animate) {
+          el.animate([{ transform: from, opacity: 0 }, { transform: 'none', opacity: 1 }],
+            { duration: 480, easing: 'cubic-bezier(.22,1,.36,1)' });
+        }
+      });
+    }
+
+    function update() {
+      ticking = false;
+      var y = lineY();
+      var idx = 0;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].target.getBoundingClientRect().top - y <= 0) idx = i;
+        else break;
+      }
+      // At the very bottom of the page the last article may never cross the line.
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+        idx = items.length - 1;
+      }
+      if (idx === current) return;
+      var prev = current;
+      current = idx;
+      items.forEach(function (item, i) {
+        item.link.classList.toggle('is-active', i === idx);
+        if (i === idx) item.link.setAttribute('aria-current', 'true');
+        else item.link.removeAttribute('aria-current');
+      });
+      if (label) label.textContent = titleOf(items[idx].link);
+      if (num) num.textContent = numberOf(items[idx].link);
+      if (prev > -1) cycle(idx > prev ? 1 : -1);
+      if (!isMobile()) reveal(items[idx].link);
+    }
+
+    // Where the sticky bar ends (its pinned top + height), less the gradient tail
+    // it fades out over, plus a little air.
+    function clearance() {
+      var mobile = isMobile() && wrap;
+      var px = mobile ? (parseFloat(getComputedStyle(wrap).top) || 0) + wrap.offsetHeight - 8 + 'px' : '';
+      items.forEach(function (item) { item.target.style.scrollMarginTop = px; });
+    }
+
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    }
+
+    if (host) {
+      // narthex keeps its open class on the host until the exit animation ends,
+      // so following the class keeps the wrap raised for exactly as long as the
+      // drawer is on screen.
+      new MutationObserver(function () {
+        if (wrap) wrap.classList.toggle('is-open', host.classList.contains('is-visible'));
+      }).observe(host, { attributes: true, attributeFilter: ['class'] });
+      // The panel is laid out on the frame after the open event.
+      host.addEventListener('vci:modal:open', function () {
+        window.requestAnimationFrame(function () {
+          if (current > -1) reveal(items[current].link, true);
+          fade();
+        });
+      });
+    }
+    if (toggle) {
+      toggle.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+        e.preventDefault();
+        if (modal()) modal().open('toc', toggle);
+      });
+    }
+
+    list.addEventListener('scroll', fade, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', function () { clearance(); onScroll(); });
+    items.forEach(function (item) {
+      item.link.addEventListener('click', function () {
+        // Release the lock before the browser scrolls to the anchor. Focus is
+        // left to the fragment navigation, which moves it to the article.
+        if (modal() && modal().isOpen('toc')) modal().close('toc', false);
+        window.setTimeout(update, 60);
+      });
+    });
+    clearance();
+    update();
+    window.setTimeout(function () { clearance(); update(); }, 300);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
