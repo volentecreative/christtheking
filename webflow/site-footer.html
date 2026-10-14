@@ -103,6 +103,20 @@
   @starting-style {
     .nav_dropdown-list.w-dropdown-list.w--open { opacity: 0; }
   }
+
+  /* The fade is for the first open and the last close only. Moving from one
+     item to the next, Webflow opens the new list and closes the old in the
+     same moment; fading the old one out kept both on screen, and Learn's
+     full-width list, later in the DOM, covered Connect's while it faded in.
+     While another list is open, a closing one goes at once. */
+  .navbar_menu:has(.w-dropdown-list.w--open) .nav_dropdown-list.w-dropdown-list:not(.w--open) {
+    transition: none;
+  }
+
+  /* A list on its way out never catches the cursor (which could reopen it)
+     or covers the open one. */
+  .nav_dropdown-list.w-dropdown-list:not(.w--open) { pointer-events: none; }
+  .nav_dropdown-list.w-dropdown-list.w--open { z-index: 2; }
 }
 
 /* The chevron flips at every width: the mobile menu's toggles get w--open
