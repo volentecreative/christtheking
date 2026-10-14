@@ -85,10 +85,13 @@
     flex: none;
   }
   /* Icon state swaps: play ⇄ pause follows the player; copy shows a tick
-     for a moment after copying. */
-  [data-transcript-play]:not([data-playing]) [data-icon='pause'],
+     for a moment after copying. The alternate icons (pause, tick) are
+     hidden by default in the style panel (.button-icon.is-alt). */
+  [data-transcript-play][data-playing] [data-icon='pause'],
+  [data-transcript-copy][data-done] [data-icon='done'] {
+    display: block;
+  }
   [data-transcript-play][data-playing] [data-icon='play'],
-  [data-transcript-copy]:not([data-done]) [data-icon='done'],
   [data-transcript-copy][data-done] [data-icon='copy'] {
     display: none;
   }
@@ -147,9 +150,6 @@
      Sheet: + play/pause and close (.modal_close.is-sheet-only, hidden in the
      style panel, shown here while open), no expand. The scrim
      (.media-transcript_scrim) is hidden in the style panel too. */
-  [data-transcript-grab] {
-    display: none;
-  }
   /* Synchronize (.media-transcript_sync, hidden in the style panel). */
   [data-transcript-sync][data-show] {
     display: block;
@@ -158,15 +158,9 @@
   .media-transcript.is-visible [data-transcript-play] {
     display: flex;
   }
-  /* The sheet's grab bar (same as the Filters drawer's). */
+  /* The sheet's grab bar (.media-transcript_grab, hidden in the style panel). */
   .media-transcript.is-visible [data-transcript-grab] {
     display: block;
-    width: 40px;
-    height: 4px;
-    margin: 0 auto 0.25rem;
-    border-radius: 2px;
-    background-color: currentColor;
-    opacity: 0.35;
   }
   @media (max-width: 991px) {
     .media-transcript.is-visible [data-transcript-expand] {
