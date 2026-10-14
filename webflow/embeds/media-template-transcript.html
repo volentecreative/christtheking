@@ -8,7 +8,10 @@
      .media-secondary is a narthex drawer (vci-modal="drawer", key "transcript",
      inline at 992px+), .media-transcript its sheet part. The preview's rows
      are a copy of the sheet's, made here, so the two are separate elements and
-     the sheet can slide away on close while the box stays put. -->
+     the sheet can slide away on close while the box stays put.
+     It also builds the YouTube player, in .video-embed [data-youtube-id] (the
+     YouTube Video ID field), so the iframe loads once with the player API on
+     rather than being reloaded to switch it on. -->
 <style>
   [data-t-row] {
     display: grid;
@@ -217,6 +220,25 @@
     var d = document;
     var reduced = matchMedia('(prefers-reduced-motion: reduce)');
     var $ = function (s, r) { return (r || d).querySelector(s); };
+
+    /* The video, built straight away: this embed comes after it in the page. */
+    (function () {
+      var box = $('[data-youtube-id]');
+      if (!box || box.querySelector('iframe')) return;
+      var id = (box.getAttribute('data-youtube-id') || '').trim();
+      if (!id) { box.style.display = 'none'; return; }
+      var f = d.createElement('iframe');
+      f.src = 'https://www.youtube.com/embed/' + encodeURIComponent(id) +
+        '?rel=0&modestbranding=1&playsinline=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+      f.title = (($('h1') || {}).textContent || 'Sermon video').trim();
+      f.width = '100%';
+      f.height = '100%';
+      f.setAttribute('frameborder', '0');
+      f.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+      f.referrerPolicy = 'strict-origin-when-cross-origin';
+      f.allowFullscreen = true;
+      box.appendChild(f);
+    })();
 
     window.onYouTubeIframeAPIReady = function () {
       init();
