@@ -35,14 +35,21 @@
     color: var(--_theme---text-01);
     border-left-color: var(--_theme---accent-01);
   }
-  /* The transcript is timed about every 45 seconds. Within the playing row,
-     each sentence's start is estimated from its length, and every sentence
-     but the current one steps back a shade, so the reading place moves. */
-  [data-t-row][data-t-active] [data-t-s]:not([data-t-now]) {
-    color: var(--_theme---text-02);
-  }
+  /* The transcript is timed about every 45 seconds. Within the playing row
+     each sentence's start is estimated from its length, and the one being
+     spoken gets a soft rounded highlight. The padding is cancelled by an
+     equal negative margin so the words don't move, and the highlight is
+     cloned onto each line a wrapped sentence spans. */
   [data-t-s] {
-    transition: color 0.2s ease;
+    padding: 0.1em 0.2em;
+    margin: 0 -0.2em;
+    border-radius: 0.3em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition: background-color 0.25s ease;
+  }
+  [data-t-row][data-t-active] [data-t-s][data-t-now] {
+    background-color: color-mix(in srgb, var(--_theme---accent-01) 20%, transparent);
   }
   /* Matches .text-style-mono (font) at the .text-size-small size (0.875rem).
      Values copied from those classes, not combo-classed, because the time
