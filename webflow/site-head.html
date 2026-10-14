@@ -172,7 +172,8 @@ html {
      knows. The list's word-sized gap (.contributor_list-card,
      style panel) is the space after each comma. The same style is
      what the sync writes into a media item's speaker-text
-     (speakerText in lib/parse.js).
+     (speakerText in lib/parse.js). The "and" is quieter than the
+     names (text-03).
      =========================================================== -->
 <style>
 .contributor_list-card > .w-dyn-item:not(:last-child) > *::after {
@@ -183,5 +184,6 @@ html {
 }
 .contributor_list-card > .w-dyn-item:last-child:not(:first-child) > *::before {
   content: "and ";
+  color: var(--_theme---text-03);
 }
 </style>

@@ -27,8 +27,20 @@
   -webkit-mask-image: none;
   mask-image: none;
 }
-/* Each row's speakers (a nested Collection List) are data for the script. */
-[data-series-speakers] { display: none; }
+/* Each playlist row's meta: speakers (a nested Collection List) · divider
+   (.meta-divider) · date. The script picks which show by writing
+   data-meta="date", "speaker", or "speaker date" on the row; until it has,
+   the row shows its date alone. */
+[data-series-row]:not([data-meta~="speaker"]) [data-series-speakers],
+[data-series-row]:not([data-meta="speaker date"]) .meta-divider,
+[data-series-row][data-meta]:not([data-meta~="date"]) [data-series-date] {
+  display: none;
+}
+/* Two speakers on one talk: "A and B"; three or more: "A, B, and C". */
+[data-series-speakers] .w-dyn-items { display: flex; flex-wrap: wrap; column-gap: 0.3em; }
+[data-series-speakers] .w-dyn-item:not(:last-child) > *::after { content: ","; }
+[data-series-speakers] .w-dyn-item:first-child:nth-last-child(2) > *::after { content: none; }
+[data-series-speakers] .w-dyn-item:last-child:not(:first-child) > *::before { content: "and "; }
 </style>
 <script>
 /* ===========================================================================
@@ -136,15 +148,12 @@
     var mixed = names.concat(listed ? [] : [mine]).filter(function (n, i, all) {
       return n && all.indexOf(n) === i;
     }).length > 1;
-    if (mixed) {
-      var times = items.map(function (it) { return it.time; });
-      var event = dated && Math.max.apply(null, times) - Math.min.apply(null, times) <= 7 * 864e5;
-      items.forEach(function (it, n) {
-        var when = it.row.querySelector('[data-series-date]');
-        if (!when || !names[n]) return;
-        when.textContent = event ? names[n] : names[n] + ' \u00b7 ' + when.textContent.trim();
-      });
-    }
+    var times = items.map(function (it) { return it.time; });
+    var event = dated && Math.max.apply(null, times) - Math.min.apply(null, times) <= 7 * 864e5;
+    items.forEach(function (it, n) {
+      var show = !mixed || !names[n] ? 'date' : event ? 'speaker' : 'speaker date';
+      it.row.setAttribute('data-meta', show);
+    });
 
     items.forEach(function (it, n) {
       var label = it.row.querySelector('[data-series-index]');
