@@ -6,10 +6,11 @@
   <title>Love the Standard | Christ the King Church</title>
   <meta name="description" content="A sermon">
   <style>
-    /* Just enough of the site's layout to scroll the stage out of view. */
+    /* Just enough of the site's layout to scroll the stage out of view. Webflow's base CSS sets border-box on everything. */
+    * { box-sizing: border-box; }
     :root { --_theme---background-01:#151413; --_theme---background-02:#1f1d1b; --_theme---background-03:#2a2724;
       --_theme---border-01:#1f1d1b; --_theme---border-02:#2a2724; --_theme---text-01:#fff; --_theme---text-02:#ccc; --_theme---text-03:#999;
-      --_theme---accent-01:#d4af37; --border-radius-small:.5rem; --border-radius-medium:1rem; }
+      --_theme---accent-01:#d4af37; --border-radius-small:.5rem; --border-radius-medium:1rem; --_spacing---gutter:2rem; }
     body { margin: 0; background: var(--_theme---background-01); color: var(--_theme---text-01); font-family: sans-serif; }
     .navbar { position: sticky; top: 0; height: 72px; background: #000; z-index: 100; }
     .announcement-bar { height: 40px; background: #222; }
@@ -80,6 +81,7 @@
   </div>
   <button class="scroll-to-top_button" aria-label="Scroll to top"></button>
   <script>window.__sitewideRan = (window.__sitewideRan || 0) + 1;</script>
+  <link rel="stylesheet" href="/media-player.css">
   <script src="/media-player.js"></script>
 </body>
 </html>

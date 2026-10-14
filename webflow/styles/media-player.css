@@ -1,0 +1,164 @@
+/* Reference copy of the sermon player's Designer classes (christthekingchurch.webflow.io).
+ * The Designer is the source of truth: edit these in the style panel, not here. This file
+ * exists so the repo shows what the classes hold and so test/ can run the player without
+ * Webflow's CSS. Values use the site's variables; the fallbacks are the dark theme's.
+ * Behaviour-only rules (attribute states, :has(), the progress variable, the dock bumps)
+ * stay in webflow/registered/media-player.js. */
+
+.media-player_bar {
+  position: fixed;
+  z-index: 95;
+  left: auto;
+  right: calc(var(--_spacing---gutter, 1rem) / 2);
+  bottom: calc(var(--_spacing---gutter, 1rem) / 2);
+  width: 26rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem 0.625rem;
+  border: 0.125rem solid var(--_theme---border-02, #2a2724);
+  border-radius: var(--border-radius-small, 0.5rem);
+  background-color: var(--_theme---background-02, #1f1d1b);
+  color: var(--_theme---text-01, #fff);
+  box-shadow: 0 0.5rem 1.25rem -0.375rem rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transform: translateY(calc(100% + 1.5rem));
+  opacity: 0;
+  visibility: hidden;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out, visibility 0s linear 240ms;
+}
+@media (max-width: 991px) {
+  .media-player_bar {
+    left: calc(var(--_spacing---gutter, 1rem) / 2);
+    right: calc(var(--_spacing---gutter, 1rem) / 2);
+    bottom: calc(var(--_spacing---gutter, 1rem) / 2);
+    width: auto;
+  }
+}
+.media-player_bar.is-visible {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out, visibility 0s linear 0s;
+}
+
+.media-player_info {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 8rem;
+  min-width: 0;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.media-player_info:focus-visible {
+  outline: 0.125rem solid var(--_theme---accent-01, #d4af37);
+  outline-offset: 0.125rem;
+  border-radius: 0.25rem;
+}
+
+/* The title fades out at the right edge instead of ending in an ellipsis. */
+.media-player_title {
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, #000 80%, transparent 100%);
+}
+
+.media-player_meta { min-width: 0; }
+
+.media-player_controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+}
+
+.media-player_btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--border-radius-small, 0.5rem);
+  background-color: transparent;
+  color: var(--_theme---text-01, #fff);
+  cursor: pointer;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+.media-player_btn:hover { background-color: var(--_theme---background-03, #2a2724); }
+.media-player_btn:focus-visible {
+  outline: 0.125rem solid var(--_theme---accent-01, #d4af37);
+  outline-offset: 0.125rem;
+}
+/* Play/pause: the back-to-top button in gold. */
+.media-player_btn.is-play {
+  background-color: var(--_theme---accent-01, #d4af37);
+  color: var(--_theme---background-01, #151413);
+  border: 0.125rem solid var(--_theme---border-02, #2a2724);
+  border-radius: 100rem;
+  box-shadow: 0 0.5rem 1.25rem -0.375rem rgba(0, 0, 0, 0.5);
+}
+.media-player_btn.is-play:hover { background-color: var(--_theme---accent-01, #d4af37); filter: brightness(106%); }
+.media-player_btn.is-play:active { transform: scale(0.92); }
+.media-player_btn.is-close {
+  width: 2rem;
+  height: 2rem;
+  color: var(--_theme---text-02, #ccc);
+}
+
+/* Progress: a 0.75rem touch strip along the top edge, drawn as a thin track with a gold fill. */
+.media-player_progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0.75rem;
+  cursor: pointer;
+}
+.media-player_progress::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0.1875rem;
+  background-color: var(--_theme---border-02, #2a2724);
+}
+.media-player_progress:focus-visible {
+  outline: 0.125rem solid var(--_theme---accent-01, #d4af37);
+  outline-offset: -0.125rem;
+}
+.media-player_progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 0.1875rem;
+  width: 0%;
+  background-color: var(--_theme---accent-01, #d4af37);
+}
+
+.media-player_video {
+  position: absolute;
+  z-index: 3;
+  aspect-ratio: 16 / 9;
+  overflow: clip;
+  border-radius: var(--border-radius-medium, 1rem);
+  background-color: var(--_theme---background-02, #1f1d1b);
+}
+
+/* The "Listen" entry point: an icon-button in the "Listen on" row, or a bordered pill after the stage. */
+.media-player_listen { color: inherit; }
+.media-player_listen.is-fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: auto;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+  border: 0.125rem solid var(--_theme---border-02, #2a2724);
+  border-radius: var(--border-radius-small, 0.5rem);
+  color: var(--_theme---text-01, #fff);
+  font-weight: 700;
+  text-decoration: none;
+}

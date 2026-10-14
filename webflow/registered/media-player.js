@@ -33,8 +33,14 @@
  * YOUTUBE POLICY (developers.google.com/youtube/terms/required-minimum-functionality)
  *   The player viewport stays ≥ 200×200px, nothing is drawn over it, and
  *   YouTube is never played hidden or in the background: Listen mode pauses
- *   YouTube and plays the MP3. That is why the floating video is a full-width
- *   strip on a phone and why the controls sit under the video, not on it.
+ *   YouTube and plays the MP3, and a video that leaves the screen is handed
+ *   over or paused, never kept playing out of view.
+ *
+ * STYLES  The look lives in Designer classes (style panel): media-player_bar
+ *   (+ is-visible), _info, _title, _meta, _controls, _btn (+ is-play, is-close),
+ *   _progress, _progress-fill, _video, _listen (+ is-fallback). The script only
+ *   injects behaviour CSS (attribute states, :has(), the progress variable, the
+ *   dock bumps). webflow/styles/media-player.css is a reference copy.
  *
  * API     window.ctkPlayer — ready, hasVideo, hasAudio, getMode(), getTime(),
  *         getDuration(), isPlaying(), play(), pause(), toggle(), seek(s, {play}),
@@ -142,61 +148,40 @@
     watch: 'M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Zm240-40 240-160-240-160v320Z'
   };
 
-  /* ---------- CSS: the bar is a series-playlist row (same padding, radius, border and type
-     styles as .media-playlist_item.small), on the card surface, with a progress edge. ---------- */
+  /* ---------- CSS: behaviour only. Everything that is a look (the bar card, the buttons, the
+     progress edge, the title fade, the Listen button) is a real Designer class, editable in the
+     style panel: media-player_bar (+ is-visible), _info, _title, _meta, _controls, _btn (+ is-play,
+     is-close), _progress, _progress-fill, _video, _listen (+ is-fallback). The rules below are the
+     ones the panel cannot express: attribute states, :has(), a CSS variable's value, and the bumps
+     for things that share the bottom edge. webflow/styles/media-player.css mirrors the classes. ---------- */
   function css() {
     if ($('style[data-player-style]')) return;
     var s = el('style', null, { 'data-player-style': '' });
     s.textContent = [
       /* The root is a child of <body>, never of the page content, so a content swap never touches it.
-         It has no box of its own: the video box is laid over the stage (or fixed above the bar), and
-         the bar is fixed to the bottom of the screen while a sermon plays. */
-      '.media-player{display:contents;color:var(--_theme---text-01)}',
+         It has no box of its own: the video box is laid over the stage and the bar is fixed. */
+      '.media-player{display:contents}',
       '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0;transition:none}',
-      '.media-player_video{position:absolute;z-index:3;aspect-ratio:16/9;border-radius:var(--border-radius-medium);overflow:clip;background:var(--_theme---background-02)}',
       '.media-player_video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
-      '.media-player[data-has-video="false"] .media-player_video{display:none}',
       /* Away from the stage there is never a video on screen: the bar is all there is. A video
          cannot keep playing hidden (YouTube policy, and iOS pauses it anyway), so leaving the
          stage hands over to the audio, or pauses a sermon that has none. */
-      '.media-player[data-presentation="floating"] .media-player_video,.media-player[data-presentation="hidden"] .media-player_video{display:none}',
-      /* The bar: a floating card like the section selector on the Beliefs pages (2px border, small
-         radius, card surface), inset from the edges, with the progress edge along its top. */
-      '.media-player_bar{position:fixed;z-index:95;box-sizing:border-box;left:var(--_spacing---gutter,1rem);right:var(--_spacing---gutter,1rem);bottom:calc(1rem + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:.5rem .75rem;padding:.75rem 1rem .625rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);background-color:var(--_theme---background-02);box-shadow:0 8px 20px -6px #00000080;overflow:hidden;transform:translateY(calc(100% + 1.5rem));opacity:0;visibility:hidden;transition:transform 240ms cubic-bezier(.22,1,.36,1),opacity 200ms ease-out,visibility 0s linear 240ms}',
-      '@media (min-width:992px){.media-player_bar{left:auto;width:26rem;right:1.5rem;bottom:1.5rem}}',
-      '.media-player[data-bar="on"] .media-player_bar{transform:none;opacity:1;visibility:visible;transition-delay:0s}',
+      '.media-player[data-has-video="false"] .media-player_video,.media-player[data-presentation="floating"] .media-player_video,.media-player[data-presentation="hidden"] .media-player_video{display:none}',
       '.media-player[data-over-sheet] .media-player_bar{z-index:1002}',
       '@media (prefers-reduced-motion:reduce){.media-player_bar{transition:none}}',
-      '.media-player_info{display:flex;flex-direction:column;flex:1 1 8rem;min-width:0;gap:.4rem;cursor:pointer}',
-      '.media-player_info:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px;border-radius:.25rem}',
-      '.media-player_title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.media-player_meta{min-width:0}',
-      '.media-player_meta > [data-empty],.media-player_meta > [data-empty] + .meta-divider,.media-player_meta > .meta-divider:has(+ [data-empty]){display:none}',
-      '.media-player_meta > .meta-divider:first-child{display:none}',
-      '.media-player_controls{display:flex;align-items:center;gap:.25rem;flex:none}',
-      '.media-player_btn{display:inline-flex;align-items:center;justify-content:center;width:2.75rem;height:2.75rem;padding:0;border:0;border-radius:var(--border-radius-small);background:transparent;color:var(--_theme---text-01);cursor:pointer;font:inherit}',
+      /* Empty meta items, and the dividers beside them, drop out of the speaker · time · status line. */
+      '.media-player_meta > [data-empty],.media-player_meta > [data-empty] + .meta-divider,.media-player_meta > .meta-divider:has(+ [data-empty]),.media-player_meta > .meta-divider:first-child{display:none}',
       '.media-player_btn svg{width:1.5rem;height:1.5rem}',
-      /* Play/pause is the back-to-top button in gold: 2.75rem, 2px border, round, the same shadow and press. */
-      '.media-player_btn[data-size="large"]{background-color:var(--_theme---accent-01);color:var(--_theme---background-01);border:2px solid var(--_theme---border-02);border-radius:100rem;box-shadow:0 8px 20px -6px #00000080;transition:transform .15s ease,background-color .15s ease}',
-      '.media-player_btn[data-size="large"]:active{transform:scale(.92)}',
-      '.media-player_btn[data-size="large"] svg{width:1.5rem;height:1.5rem}',
-      '.media-player_btn[aria-pressed="true"]{color:var(--_theme---accent-01)}',
-      '@media (hover:hover){.media-player_btn:hover{background-color:var(--_theme---background-03)}.media-player_btn[data-size="large"]:hover{background-color:var(--_theme---accent-01);filter:brightness(1.06)}}',
-      '.media-player_btn:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px}',
+      '.media-player_btn.is-close svg{width:1.25rem;height:1.25rem}',
       '.media-player_btn[data-on] [data-icon="off"],.media-player_btn:not([data-on]) [data-icon="on"]{display:none}',
-      '.media-player_btn[data-player="close"]{width:2rem;height:2rem;color:var(--_theme---text-02)}',
-      '.media-player_btn[data-player="close"] svg{width:1.25rem;height:1.25rem}',
-      /* Progress: a 12px touch strip along the top edge, drawn as a 3px track with a gold fill. */
-      '.media-player_progress{position:absolute;left:0;right:0;top:0;height:.75rem;cursor:pointer;touch-action:none}',
-      '.media-player_progress::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background-color:var(--_theme---border-02)}',
-      '.media-player_progress_fill{position:absolute;left:0;top:0;height:3px;width:var(--player-progress,0%);background-color:var(--_theme---accent-01)}',
-      '.media-player_progress:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:-2px}',
-      '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress_fill,.media-player_progress:hover .media-player_progress_fill{height:5px}',
-      /* The "Listen" entry point next to the Spotify / Apple icons (or after the stage when that row is absent). */
+      '.media-player_btn[aria-pressed="true"]{color:var(--_theme---accent-01)}',
+      /* The fill is the played share of the progress edge; the edge thickens under a pointer. */
+      '.media-player_progress{touch-action:none}',
+      '.media-player_progress-fill{width:var(--player-progress,0%)}',
+      '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress-fill,.media-player_progress:hover .media-player_progress-fill{height:5px}',
       '.media-player_listen svg{width:100%;height:100%}',
-      '.media-player_listen[aria-pressed="true"]{color:var(--_theme---accent-01)}',
-      '.media-player_listen.is-fallback{display:inline-flex;align-items:center;gap:.5rem;width:auto;padding:.5rem .75rem;margin-top:.75rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);color:var(--_theme---text-01);font-weight:700;text-decoration:none}',
       '.media-player_listen.is-fallback svg{width:1.25rem;height:1.25rem}',
+      '.media-player_listen[aria-pressed="true"]{color:var(--_theme---accent-01)}',
       'html[data-player-navigating] .page-wrapper{cursor:progress}',
       /* Things that share the bottom edge with the bar move up by its height. */
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
@@ -249,10 +234,12 @@
     els.mode = button('mode', 'Switch to audio',
       '<span data-icon="off">' + svg(ICON.listen) + '</span><span data-icon="on">' + svg(ICON.watch) + '</span>',
       { 'aria-pressed': 'false' });
-    els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>', { 'data-size': 'large' });
+    els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>');
+    els.play.classList.add('is-play');
     if (videoId && audioUrl) controls.appendChild(els.mode);
     controls.appendChild(els.play);
     els.close = button('close', 'Close player', svg(ICON.close));
+    els.close.classList.add('is-close');
     controls.appendChild(els.close);
 
     // Progress edge: a slider for the keyboard, a strip for a finger.
@@ -260,7 +247,7 @@
       'data-player': 'progress', role: 'slider', tabindex: '0', 'aria-label': 'Position',
       'aria-valuemin': '0', 'aria-valuemax': '0', 'aria-valuenow': '0'
     });
-    els.fill = el('div', 'media-player_progress_fill');
+    els.fill = el('div', 'media-player_progress-fill');
     els.progress.appendChild(els.fill);
 
     bar.appendChild(els.progress);
@@ -380,6 +367,7 @@
     root.setAttribute('data-status', S.status);
     root.setAttribute('data-presentation', S.presentation);
     root.setAttribute('data-bar', S.barShown ? 'on' : 'off');
+    bar.classList.toggle('is-visible', S.barShown);
     if (playing) els.play.setAttribute('data-on', ''); else els.play.removeAttribute('data-on');
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     if (S.mode === 'listen') els.mode.setAttribute('data-on', ''); else els.mode.removeAttribute('data-on');

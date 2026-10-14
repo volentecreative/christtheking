@@ -18,6 +18,7 @@ const FIXTURE = read('./fixtures/media-player.html');
 const OTHER = read('./fixtures/media-player-other.html');
 const EMBED = read('../webflow/embeds/media-template-transcript.html');
 const PLAYER = read('../webflow/registered/media-player.js');
+const STYLES = read('../webflow/styles/media-player.css');
 
 // Five minutes of 8 kHz 8-bit silence (2.4 MB) — long enough to seek to any transcript row.
 function wav(seconds = 300) {
@@ -77,6 +78,7 @@ test.before(async () => {
   server = createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/media-player.js') return res.writeHead(200, { 'content-type': 'application/javascript' }).end(PLAYER);
+    if (url.pathname === '/media-player.css') return res.writeHead(200, { 'content-type': 'text/css' }).end(STYLES);
     if (url.pathname === '/audio.wav') {
       const range = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
       if (range) {
@@ -168,7 +170,7 @@ test('the bar appears on play, stays while paused, and goes away when closed', a
   await page.waitForFunction(() => ctkPlayer.isPlaying());
   await barSettled(page);
   const on = await page.evaluate(() => { const el = document.querySelector('[data-player="bar"]'); const b = el.getBoundingClientRect(), cs = getComputedStyle(el); return { bottom: innerHeight - b.bottom, left: b.left, right: innerWidth - b.right, width: b.width, border: cs.borderTopWidth + ' ' + cs.borderTopStyle, radius: cs.borderTopLeftRadius, dock: getComputedStyle(document.documentElement).getPropertyValue('--player-dock-height').trim(), body: document.body.classList.contains('has-player-dock') }; });
-  assert.ok(on.bottom >= 16 && on.right >= 16 && on.left > 16 && on.width <= 420, `a floating card in the corner, inset from the edges ${JSON.stringify(on)}`);
+  assert.ok(on.bottom === 16 && on.right === 16 && on.left > 16 && on.width <= 420, `a floating card in the corner, inset by half the gutter ${JSON.stringify(on)}`);
   assert.equal(on.border, '2px solid'); assert.equal(on.radius, '8px');
   assert.match(on.dock, /^\d+px$/); assert.equal(on.body, true);
   assert.equal(await page.$eval('[data-player="speaker"]', (e) => e.textContent), 'Doug Wilson');
@@ -384,7 +386,7 @@ test('on a phone the bar is an inset floating card and nothing else is on screen
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating' && ctkPlayer.getMode() === 'listen');
   await barSettled(page);
   const bar = await page.$eval('[data-player="bar"]', (b) => { const r = b.getBoundingClientRect(), cs = getComputedStyle(b); return { left: r.left, right: innerWidth - r.right, bottom: innerHeight - r.bottom, border: cs.borderLeftWidth, radius: cs.borderTopLeftRadius }; });
-  assert.ok(bar.left >= 12 && bar.right >= 12 && bar.bottom >= 12, `inset from the edges ${JSON.stringify(bar)}`);
+  assert.ok(bar.left === 16 && bar.right === 16 && bar.bottom === 16, `inset by half the gutter on every side ${JSON.stringify(bar)}`);
   assert.equal(bar.border, '2px'); assert.equal(bar.radius, '8px');
   assert.equal(await page.$eval('.media-player_video', (v) => getComputedStyle(v).display), 'none');
   await ctx.close();

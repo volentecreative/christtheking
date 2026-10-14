@@ -272,14 +272,39 @@ bar's height.
 | Media Template → `.video-embed` | `data-audio-offset` bound to Audio Offset Seconds (optional, once that field exists) | later |
 | Media Template → transcript embed | the current `embeds/media-template-transcript.html` | done 2026-10-14 — defers to the player when it is on the page, works alone when it is not |
 | Site settings → Registered scripts | `mediaPlayer` 1.0.0 registered and applied to the site footer | done 2026-10-14, live on the next site publish |
+| Styles → `media-player_*` classes | the bar's look, as real Designer classes (below) | done 2026-10-14 |
 
-The bar and the Listen button are built by the script and use the site's
-own classes where a playlist row and the platform icons do
-(`text-style-title-small`, `media-meta`, `text-style-media-meta`,
-`meta-divider`, `icon-button`) plus `media-player_*` classes and the tokens
-(`--_theme---*`, `--border-radius-*`, `--_spacing---gutter`), so nothing in
-the Designer has to be drawn for them and restyling those site classes
-restyles the bar.
+**The bar's styles are Designer classes**, editable in the style panel like
+any other. The script builds the elements and puts these classes on them;
+it does not style them itself (its only injected CSS is behaviour the panel
+cannot express: attribute states, `:has()`, the progress variable, the
+bumps for the back-to-top button and the transcript sheet). The classes are
+unused by any element in the Designer, so they show under Style Manager
+with no element selected; the quickest way to edit one is to select any
+element, type the class name in the selector field, and change it there, or
+drop a temporary div with the class on a scratch page.
+
+| Class | What it is |
+| --- | --- |
+| `media-player_bar` | the floating card: fixed, 26rem wide bottom-right on desktop; tablet and below spans the width. Inset `calc(var(--_spacing---gutter) / 2)` on every side. Hidden by default (slid down, transparent). |
+| `media-player_bar is-visible` | the shown state the script toggles while a sermon is active |
+| `media-player_info` | the title + meta column; goes back to the sermon page |
+| `media-player_title` | one line that fades out at the right edge (`mask-image`) instead of ending in `…` |
+| `media-player_meta` | the speaker · time · status line (the items use the site's `media-meta` / `text-style-media-meta` / `meta-divider`) |
+| `media-player_controls` | the button row |
+| `media-player_btn` | a 2.75rem icon button (Listen/Watch); hover and focus states |
+| `media-player_btn is-play` | play/pause: gold, round, 2px border, the back-to-top shadow, scale on press |
+| `media-player_btn is-close` | the 2rem close button |
+| `media-player_progress` | the scrubbable strip along the top edge; its `::before` is the track |
+| `media-player_progress-fill` | the gold played share (the script sets its width) |
+| `media-player_video` | the 16:9 box that holds the YouTube iframe over the stage |
+| `media-player_listen` (+ `is-fallback`) | the Listen button in the "Listen on" row (`icon-button` does the look); `is-fallback` is the bordered pill used when that row is absent |
+
+The bar's text uses the site's own classes where a playlist row and the
+platform icons do (`text-style-title-small`, `media-meta`,
+`text-style-media-meta`, `meta-divider`, `icon-button`), so restyling those
+restyles the bar too. `styles/media-player.css` is a reference copy of the
+classes for the repo and the tests; the Designer is the source of truth.
 
 ### Hosting the script
 
@@ -295,7 +320,9 @@ https://cdn.jsdelivr.net/gh/volentecreative/christtheking@<commit>/webflow/regis
 Registered 2026-10-14 as `mediaPlayer` 1.0.0 (commit `c87209a`) and applied
 to the site footer through the Data API; 1.1.0 the same day (bar redesign,
 cross-page playback); 1.2.0 (bottom bar only while playing, Listen button);
-1.3.0 (floating card, no video off-screen, hand-off on leaving the browser). To ship a change: commit it, then
+1.3.0 (floating card, no video off-screen, hand-off on leaving the browser);
+1.4.0 (styles moved to Designer classes, title fade, half-gutter inset, no
+re-run of Webflow's per-page bundle on a swap). To ship a change: commit it, then
 re-register with the new commit's URL and hash and bump the version:
 
 ```sh
