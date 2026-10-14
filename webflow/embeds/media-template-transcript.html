@@ -166,6 +166,12 @@
     .media-transcript.is-visible {
       padding-bottom: env(safe-area-inset-bottom);
     }
+    /* Collapsed, the box is a read-only preview: it follows the sermon by
+       itself and lets swipes pass through to the page. Open it as the drawer
+       to scroll and read freely. */
+    .media-secondary:not(.is-visible) .media-transcript_body {
+      overflow: hidden;
+    }
     /* Reading text one step brighter (text-02) than the desktop card's. */
     .media-secondary [data-t-row] {
       color: var(--_theme---text-02);
@@ -348,11 +354,16 @@
       var syncWrap = $('[data-transcript-sync]');
       var syncBtn = syncWrap && syncWrap.querySelector('a, button');
       var row = null, sent = null, followed = null, synced = true, ownScrollUntil = 0;
+      var mobile = matchMedia('(max-width: 991px)');
+      var host = $('.media-transcript');
       function playing() { var st = state(); return st === 1 || st === 3; }
+      // The collapsed mobile box: a preview the reader can't scroll.
+      function preview() { return mobile.matches && !(host && host.classList.contains('is-visible')); }
       function showSync() {
-        if (syncWrap) syncWrap.toggleAttribute('data-show', !synced && playing());
+        if (syncWrap) syncWrap.toggleAttribute('data-show', !synced && playing() && !preview());
       }
       function letGo() {
+        if (preview()) return;
         // Scroll events from our own smooth scroll keep extending its window.
         if (Date.now() < ownScrollUntil) { ownScrollUntil = Date.now() + 150; return; }
         if (!playing()) return;
@@ -376,6 +387,17 @@
         // Our own scrolling mustn't read as the reader taking over.
         ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
         body.scrollTo({ top: target, behavior: reduced.matches ? 'auto' : 'smooth' });
+      }
+      // Preview: keep the spoken sentence in view, nudging it to the top of
+      // the box once it runs past the bottom.
+      function reveal(el) {
+        if (!body || !el || Date.now() < ownScrollUntil) return;
+        var search = $('[data-transcript-search]');
+        if (search && search.hasAttribute('data-open')) return;
+        var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
+        if (er.top >= br.top && er.bottom <= br.bottom - 4) return;
+        ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
+        body.scrollTo({ top: Math.max(0, body.scrollTop + er.top - br.top - 8), behavior: reduced.matches ? 'auto' : 'smooth' });
       }
       function resync() {
         synced = true;
@@ -419,7 +441,14 @@
         // Move only when a new timestamped section starts, bringing it to the
         // top of the box; within a section the box stays still and only the
         // sentence highlight moves.
-        if (state() === 1 && synced && row && row !== followed) {
+        if (preview()) {
+          // Always in step, playing or not, so it matches wherever the
+          // drawer was left or the video was seeked to.
+          synced = true;
+          var fits = row && sent && sent.getBoundingClientRect().bottom - row.getBoundingClientRect().top <= body.clientHeight - 12;
+          if (row && row !== followed && (fits || !sent)) { followed = row; follow(row, true); }
+          else { followed = row; reveal(sent); }
+        } else if (state() === 1 && synced && row && row !== followed) {
           followed = row;
           follow(row);
         }
