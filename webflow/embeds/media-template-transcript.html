@@ -274,6 +274,20 @@
       }
     }
 
+    /* The sheet and the inline box are the same element, so the sheet has
+       no exit slide (vci-modal-exit="none" on .media-secondary): an exit
+       animation would leave the box's place empty until it finished. On
+       close it drops straight back into the box with a short settle. */
+    d.addEventListener('vci:modal:close', function (e) {
+      if (!e.detail || e.detail.key !== 'transcript' || reduced.matches) return;
+      var tr = $('.media-transcript');
+      if (!tr || !tr.animate) return;
+      tr.animate([{ opacity: 0, transform: 'translateY(0.75rem)' }, { opacity: 1, transform: 'none' }], {
+        duration: 240,
+        easing: 'cubic-bezier(.22, 1, .36, 1)',
+      });
+    });
+
     /* Split a row's text into sentences and give each an estimated start,
        spread between this timestamp and the next by length (the last row
        assumes about 14 characters a second). Only plain-text rows are split. */
