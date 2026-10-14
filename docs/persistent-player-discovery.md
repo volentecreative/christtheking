@@ -668,3 +668,17 @@ Phase 1 (Libsyn in the sync), Phase 3/4 (background handoff), Phase 5
 bound to Audio URL on `.video-embed`, the embed paste, and a host for the
 registered script (this repo is private, so not jsDelivr).
 
+---
+
+## K. Addendum 2026-10-14 — cross-page playback built after all
+
+Josh judged continuity across pages the core feature, so §C.8's "not
+practical without an SPA" became a scoped one: while the player is active,
+same-site links fetch and swap the page content in place (navbar, announcement
+bar and footer kept; Webflow, Finsweet and narthex re-initialised; the new
+page's own scripts run), and the player root lives on `<body>` outside the
+swap. Once the player is closed the site navigates normally. The bar was
+also redesigned to the series-playlist row style with a scrubbable progress
+edge, and the floating state trimmed to title, speaker, time, play/pause and
+progress. See `webflow/README.md`, "The sermon player".
+

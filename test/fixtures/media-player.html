@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-wf-page="PAGE_SERMON" data-wf-site="site">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Love the Standard | Christ the King Church</title>
+  <meta name="description" content="A sermon">
   <style>
     /* Just enough of the site's layout to scroll the stage out of view. */
     :root { --_theme---background-01:#151413; --_theme---background-02:#1f1d1b; --_theme---background-03:#2a2724;
@@ -11,48 +12,73 @@
       --_theme---accent-01:#d4af37; --border-radius-small:.5rem; --border-radius-medium:1rem; }
     body { margin: 0; background: var(--_theme---background-01); color: var(--_theme---text-01); font-family: sans-serif; }
     .navbar { position: sticky; top: 0; height: 72px; background: #000; z-index: 100; }
+    .announcement-bar { height: 40px; background: #222; }
     .container { width: min(960px, 100% - 32px); margin: 0 auto; }
     .video-embed { aspect-ratio: 16 / 9; border-radius: var(--border-radius-medium); overflow: clip; margin-bottom: -.5rem; }
     .filler { height: 3000px; }
     .scroll-to-top_button { position: fixed; right: 16px; bottom: 16px; width: 44px; height: 44px; z-index: 90; }
     .media-transcript_body { max-height: 240px; overflow: auto; }
+    .media-transcript { position: relative; }
+    .media-transcript.is-visible { position: fixed; bottom: 0; left: 0; right: 0; height: 92dvh; z-index: 1001; background: var(--_theme---background-02); }
+    .media-transcript_sync { position: absolute; bottom: 1rem; left: 50%; transform: translate(-50%); display: none; z-index: 2; }
+    [data-transcript-sync][data-show] { display: block; }
+    footer { height: 200px; background: #111; }
   </style>
+  <script>
+    /* Stand-ins for the runtimes the content swap has to re-initialise. */
+    window.__calls = [];
+    window.Webflow = { ready: function () { __calls.push('wf:ready'); }, destroy: function () { __calls.push('wf:destroy'); },
+      require: function (n) { return n === 'ix2' ? { init: function () { __calls.push('ix2:init'); } } : null; } };
+    window.FinsweetAttributes = { modules: { list: { restart: function () { __calls.push('fs:list:restart'); } } }, load: function (k) { __calls.push('fs:load:' + k); } };
+  </script>
 </head>
 <body>
-  <nav class="navbar"></nav>
-  <main class="container">
-    <div class="media-primary">
-      <div class="video-embed" data-video="true"{{STAGE_ATTRS}}></div>
-      <div class="media-title_wrap">
-        <h1>Love the Standard</h1>
-        <div class="media-byline">
-          <div class="media-byline_speakers">
-            <div class="contributor_content"><p>Doug Wilson</p><p></p></div>
+  <div class="main-wrapper">
+    <div class="page-wrapper">
+      <div class="announcement-bar w-dyn-list"></div>
+      <nav class="navbar" vci-nav="header"><a href="/other/page" data-test="nav-other">Other</a> <a href="/sermon/love-the-standard" class="w--current" aria-current="page">This sermon</a></nav>
+      <section class="section">
+        <main class="container">
+          <div class="media-primary">
+            <div class="video-embed" data-video="true"{{STAGE_ATTRS}}></div>
+            <div class="media-title_wrap">
+              <h1>Love the Standard</h1>
+              <div class="media-byline">
+                <div class="media-byline_speakers">
+                  <div class="contributor_content"><p>Doug Wilson</p><p></p></div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
-    <div class="media-secondary">
-      <div class="media-transcript">
-        <div class="media-transcript_header">
-          <h3>Transcript</h3>
-          <button type="button" data-transcript-play aria-label="Play"><span data-icon="play">▶</span><span data-icon="pause">❚❚</span></button>
-          <div data-transcript-tools></div>
-        </div>
-        <div class="media-transcript_body">
-          <div data-transcript class="w-richtext">
-            <p><a href="#t=3.4">0:03</a> At a conference, it is always good to see people. This is the second sentence.</p>
-            <p><a href="#t=50.1">0:50</a> Fifty seconds in. Another sentence here.</p>
-            <p><a href="#t=120.0">2:00</a> Two minutes in. And more.</p>
+          <div class="media-secondary">
+            <div class="media-transcript">
+              <div class="media-transcript_header">
+                <h3>Transcript</h3>
+                <button type="button" data-transcript-play aria-label="Play"><span data-icon="play">▶</span><span data-icon="pause">❚❚</span></button>
+                <div data-transcript-tools></div>
+              </div>
+              <div class="media-transcript_body">
+                <div data-transcript class="w-richtext">
+                  <p><a href="#t=3.4">0:03</a> At a conference, it is always good to see people. This is the second sentence.</p>
+                  <p><a href="#t=50.1">0:50</a> Fifty seconds in. Another sentence here.</p>
+                  <p><a href="#t=120.0">2:00</a> Two minutes in. And more.</p>
+                </div>
+              </div>
+              <div data-transcript-sync><a href="#">Synchronize</a></div>
+            </div>
           </div>
-        </div>
-        <div data-transcript-sync><a href="#">Synchronize</a></div>
-      </div>
+          {{EMBED}}
+          <p><a href="/other/page" data-test="content-other">Go to the other page</a> <a href="/sermon/another?video=zzzzzzzzzzz&audio=" data-test="content-another">Another sermon</a> <a href="/files/notes.pdf" data-test="file">a file</a> <a href="https://example.com/" data-test="external">elsewhere</a></p>
+          <div><a href="#notes" data-test="hash">hash link</a></div>
+          <div id="notes"></div>
+          <div class="filler"></div>
+        </main>
+      </section>
+      <footer class="footer"><a href="/other/page">Footer other</a></footer>
     </div>
-    {{EMBED}}
-    <div class="filler"></div>
-  </main>
+  </div>
   <button class="scroll-to-top_button" aria-label="Scroll to top"></button>
+  <script>window.__sitewideRan = (window.__sitewideRan || 0) + 1;</script>
   <script src="/media-player.js"></script>
 </body>
 </html>

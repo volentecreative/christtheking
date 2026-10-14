@@ -39,7 +39,13 @@
  *         Times are on the VIDEO timeline (audio = video + offset), so the
  *         transcript's #t= anchors work in both modes.
  * EVENTS  on document: ctk:player:ready · play · pause · ended · time (≈400ms while
- *         active) · mode · float · inline · hidden · error — detail { player, mode, time }
+ *         active) · mode · float · inline · hidden · error · navigate — detail { player, mode, time }
+ *
+ * NAVIGATION  While the player is active (started and not closed), same-site links
+ *         swap the next page's content in place instead of unloading the document,
+ *         so playback carries on: see the navigation section. data-player-nav="off"
+ *         on a link or an ancestor opts it out. Closing the player restores normal
+ *         navigation. The root is a child of <body>, outside the swapped content.
  * STORAGE localStorage ctk-player:prefs { mode, rate } · ctk-player:positions { slug: { t, mode, at } }
  */
 (function () {
@@ -69,7 +75,11 @@
     rate: 1,
     offset: 0,
     pending: null,           // mode being switched to, while the handoff completes
-    lastTime: 0
+    lastTime: 0,
+    ratio: 1,                // how much of the stage is on screen
+    sheet: false,            // the transcript sheet is open over the page
+    anchor: 0,               // the stage's top in document coordinates, last placed
+    href: ''                 // the sermon page this item came from
   };
   var stage, root, videoBox, bar, iframe, audio = null;
   var yt = null, ytReady = false, ytHoldPause = false, ytDuration = 0;
@@ -121,22 +131,28 @@
   };
   var SKIP_LABEL = '<text x="480" y="-380" text-anchor="middle" font-size="300" font-weight="700" font-family="JetBrains Mono, monospace" fill="currentColor">' + SKIP + '</text>';
 
-  /* ---------- CSS: only what the states need; colours and sizes come from the site's tokens ---------- */
+  /* ---------- CSS: the bar is a series-playlist row (same padding, radius, border and type
+     styles as .media-playlist_item.small), on the card surface, with a progress edge. ---------- */
   function css() {
     if ($('style[data-player-style]')) return;
     var s = el('style', null, { 'data-player-style': '' });
     s.textContent = [
-      '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0}',
-      '.media-player{display:flex;flex-direction:column;gap:.5rem;width:100%;color:var(--_theme---text-01)}',
+      '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0;transition:none}',
+      /* The root is a child of <body>, never of the page content, so a content swap never touches it.
+         Inline it is an absolute box laid over the stage (which keeps the height); floating it is fixed. */
+      '.media-player{position:absolute;z-index:3;display:flex;flex-direction:column;gap:.5rem;box-sizing:border-box;color:var(--_theme---text-01)}',
+      '.video-embed[data-player-active]{height:0}',
       '.media-player_video{position:relative;aspect-ratio:16/9;border-radius:var(--border-radius-medium);overflow:clip;background:var(--_theme---background-02)}',
       '.media-player_video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
-      '.media-player_bar{display:flex;align-items:center;gap:.25rem .5rem;flex-wrap:wrap;padding:.5rem .75rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-medium);background-color:var(--_theme---background-02)}',
-      '.media-player_info{display:flex;flex-direction:column;flex:1 1 10rem;min-width:0;gap:.1rem}',
-      '.media-player_title{font-weight:700;font-size:.9375rem;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.media-player_status{font-family:"JetBrains Mono",monospace;font-size:.75rem;line-height:1.3;text-transform:uppercase;color:var(--_theme---text-02);min-height:1em}',
-      '.media-player_status:empty{display:none}',
-      '.media-player_controls,.media-player_window{display:flex;align-items:center;gap:.25rem;flex:none}',
-      '.media-player_window{display:none}',
+      '.media-player_bar{position:relative;display:flex;align-items:center;gap:.5rem .75rem;padding:.5rem .75rem .875rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);background-color:var(--_theme---background-02);overflow:hidden}',
+      '.media-player_info{display:flex;flex-direction:column;flex:1 1 8rem;min-width:0;gap:.4rem}',
+      '.media-player_title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.media-player_info[role="button"]{cursor:pointer}',
+      '.media-player_info[role="button"]:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px;border-radius:.25rem}',
+      '.media-player_meta{min-width:0}',
+      '.media-player_meta > [data-empty],.media-player_meta > [data-empty] + .meta-divider{display:none}',
+      '.media-player_meta > .meta-divider:first-child{display:none}',
+      '.media-player_controls{display:flex;align-items:center;gap:.25rem;flex:none}',
       '.media-player_btn{display:inline-flex;align-items:center;justify-content:center;width:2.75rem;height:2.75rem;padding:0;border:0;border-radius:var(--border-radius-small);background:transparent;color:var(--_theme---text-01);cursor:pointer;font:inherit}',
       '.media-player_btn svg{width:1.5rem;height:1.5rem}',
       '.media-player_btn[data-size="large"]{background-color:var(--_theme---accent-01);color:var(--_theme---background-01);border-radius:100rem}',
@@ -147,27 +163,36 @@
       '.media-player_btn[disabled],.media-player_btn[aria-disabled="true"]{opacity:.4;cursor:default}',
       '.media-player_btn[data-on] [data-icon="off"],.media-player_btn:not([data-on]) [data-icon="on"]{display:none}',
       '.media-player_rate{font-family:"JetBrains Mono",monospace;font-size:.8125rem;font-weight:600;width:3rem}',
-      '.media-player_time{font-family:"JetBrains Mono",monospace;font-size:.8125rem;font-variant-numeric:tabular-nums;color:var(--_theme---text-02);white-space:nowrap;padding:0 .25rem}',
-      '.media-player[data-presentation="floating"]{position:fixed;z-index:95;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0px));width:min(26rem,calc(100vw - 2rem));margin:0;background-color:var(--_theme---background-02);border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-medium);padding:.5rem;gap:.5rem}',
-      '.media-player[data-presentation="floating"] .media-player_bar{border:0;padding:0 .25rem}',
-      /* Floating: title and the expand/close pair share the first row, the transport sits centred below. */
-      '.media-player[data-presentation="floating"] .media-player_window{display:flex;order:1}',
-      '.media-player[data-presentation="floating"] .media-player_info{order:0;flex:1 1 8rem}',
-      '.media-player[data-presentation="floating"] .media-player_controls{order:2;flex:1 1 100%;justify-content:center}',
-      '.media-player[data-presentation="floating"][data-mode="listen"] .media-player_video{display:none}',
-      '.media-player[data-presentation="floating"] .media-player_video{border-radius:var(--border-radius-small)}',
+      /* Progress: a 12px touch strip along the bottom edge, drawn as a 3px track with a gold fill. */
+      '.media-player_progress{position:absolute;left:0;right:0;bottom:0;height:.75rem;cursor:pointer;touch-action:none}',
+      '.media-player_progress::before{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background-color:var(--_theme---border-02)}',
+      '.media-player_progress_fill{position:absolute;left:0;bottom:0;height:3px;width:var(--player-progress,0%);background-color:var(--_theme---accent-01)}',
+      '.media-player_progress:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:-2px}',
+      '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress_fill,.media-player_progress:hover .media-player_progress_fill{height:5px}',
+      /* Floating: the bar alone — title, speaker, time, play/pause, progress — in the corner. */
+      '.media-player[data-presentation="floating"]{position:fixed;z-index:95;top:auto;left:auto;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0px));width:min(24rem,calc(100vw - 2rem));margin:0}',
+      'html[data-player-navigating] .page-wrapper{cursor:progress}',
+      '.media-player[data-presentation="floating"] [data-inline-only]{display:none}',
+      '.media-player[data-presentation="floating"] .media-player_video{display:none}',
+      /* …except that a YouTube player that is actually playing may not be hidden (API policy): while
+         the video plays it stays above the bar at a legal size; Listen mode or pausing collapses it. */
+      '.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{display:block;border-radius:var(--border-radius-small)}',
+      '.media-player[data-presentation="floating"] .media-player_bar{background-color:var(--_theme---background-02)}',
+      '.media-player[data-over-sheet]{z-index:1002}',
       '.media-player[data-presentation="hidden"]{display:none}',
       '.media-player[data-has-video="false"] .media-player_video{display:none}',
-      /* Phones: an edge-to-edge strip at the bottom. YouTube requires a 200px-tall
-         viewport, which a 16:9 box only reaches from ~356px wide, so the dock gives
-         the video the whole width and keeps the controls under it. */
-      '@media (max-width:991px){.media-player[data-presentation="floating"]{left:0;right:0;bottom:0;width:auto;padding:.25rem .25rem calc(.5rem + env(safe-area-inset-bottom,0px));border-bottom:0;border-radius:var(--border-radius-medium) var(--border-radius-medium) 0 0}.media-player[data-presentation="floating"] .media-player_bar{padding:0 .5rem}}',
-      '@media (max-width:479px){.media-player_rate{display:none}}',
+      '@media (max-width:991px){.media-player[data-presentation="floating"]{left:.5rem;right:.5rem;width:auto;bottom:calc(.5rem + env(safe-area-inset-bottom,0px))}}',
+      /* Narrow phones: only a full-bleed strip keeps a playing video at YouTube\'s 200px minimum. */
+      '@media (max-width:375px){.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"],.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"]{left:0;right:0}}',
+      /* Narrow phones, inline: the transport wraps under the title instead of crushing it. */
+      '@media (max-width:479px){.media-player[data-presentation="inline"] .media-player_bar{flex-wrap:wrap}.media-player[data-presentation="inline"] .media-player_controls{flex:1 1 100%;justify-content:flex-end}}',
       '@keyframes media-player-rise{from{opacity:0;transform:translateY(.75rem)}to{opacity:1;transform:none}}',
       '.media-player[data-presentation="floating"][data-animate]{animation:media-player-rise 240ms cubic-bezier(.22,1,.36,1)}',
       '@media (prefers-reduced-motion:reduce){.media-player[data-presentation="floating"][data-animate]{animation:none}}',
-      /* The footer's scroll-to-top button shares the dock's corner. */
-      'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}'
+      /* Things that share the bottom edge with the dock move up by its height. */
+      'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
+      '.media-transcript.is-visible [data-transcript-sync]{bottom:calc(1rem + var(--player-dock-height,0px))}',
+      '.media-transcript.is-visible .media-transcript_body{padding-bottom:calc(1.5rem + var(--player-dock-height,0px))}'
     ].join('\n');
     d.head.appendChild(s);
   }
@@ -179,6 +204,12 @@
     if (extra) for (var k in extra) b.setAttribute(k, extra[k]);
     return b;
   }
+  function metaItem(name, extra) {
+    var n = el('div', 'text-style-media-meta', { 'data-player': name });
+    if (extra) for (var k in extra) n.setAttribute(k, extra[k]);
+    return n;
+  }
+  function divider() { return el('div', 'meta-divider', { 'aria-hidden': 'true' }); }
   function build() {
     root = el('div', 'media-player', {
       'data-player': 'root', role: 'region', 'aria-label': 'Sermon player',
@@ -188,44 +219,52 @@
     videoBox = el('div', 'media-player_video', { 'data-player': 'video' });
     bar = el('div', 'media-player_bar', { 'data-player': 'bar' });
 
-    var info = el('div', 'media-player_info');
-    els.title = el('div', 'media-player_title', { 'data-player': 'title' });
+    // Title + meta line, the way a series-playlist row shows them.
+    els.info = el('div', 'media-player_info', { 'data-player': 'info' });
+    els.title = el('div', 'text-style-title-small media-player_title', { 'data-player': 'title' });
     els.title.textContent = title;
-    els.status = el('div', 'media-player_status', { 'data-player': 'status', role: 'status', 'aria-live': 'polite' });
-    info.appendChild(els.title);
-    info.appendChild(els.status);
+    els.meta = el('div', 'media-meta media-player_meta');
+    els.artist = metaItem('speaker');
+    els.artist.textContent = artist;
+    els.time = metaItem('time', { 'aria-hidden': 'true' });
+    els.status = metaItem('status', { role: 'status', 'aria-live': 'polite' });
+    els.meta.appendChild(els.artist);
+    els.meta.appendChild(divider());
+    els.meta.appendChild(els.time);
+    els.meta.appendChild(divider());
+    els.meta.appendChild(els.status);
+    els.info.appendChild(els.title);
+    els.info.appendChild(els.meta);
 
     var controls = el('div', 'media-player_controls');
     els.mode = button('mode', 'Switch to audio',
       '<span data-icon="off">' + svg(ICON.listen) + '</span><span data-icon="on">' + svg(ICON.watch) + '</span>',
-      { 'aria-pressed': 'false' });
-    els.back = button('back', 'Back ' + SKIP + ' seconds', svg(ICON.back, SKIP_LABEL));
+      { 'aria-pressed': 'false', 'data-inline-only': '' });
+    els.back = button('back', 'Back ' + SKIP + ' seconds', svg(ICON.back, SKIP_LABEL), { 'data-inline-only': '' });
     els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>', { 'data-size': 'large' });
-    els.forward = button('forward', 'Forward ' + SKIP + ' seconds', svg(ICON.forward, SKIP_LABEL));
-    els.rate = button('rate', 'Playback speed', '');
+    els.forward = button('forward', 'Forward ' + SKIP + ' seconds', svg(ICON.forward, SKIP_LABEL), { 'data-inline-only': '' });
+    els.rate = button('rate', 'Playback speed', '', { 'data-inline-only': '' });
     els.rate.className += ' media-player_rate';
-    els.time = el('span', 'media-player_time', { 'data-player': 'time', 'aria-hidden': 'true' });
-    els.time.textContent = '0:00';
     if (videoId && audioUrl) controls.appendChild(els.mode);
     controls.appendChild(els.back);
     controls.appendChild(els.play);
     controls.appendChild(els.forward);
     controls.appendChild(els.rate);
-    controls.appendChild(els.time);
 
-    var win = el('div', 'media-player_window');
-    els.expand = button('expand', 'Back to the sermon page', svg(ICON.expand));
-    els.close = button('close', 'Close player', svg(ICON.close));
-    win.appendChild(els.expand);
-    win.appendChild(els.close);
+    // Progress edge: a slider for the keyboard, a strip for a finger.
+    els.progress = el('div', 'media-player_progress', {
+      'data-player': 'progress', role: 'slider', tabindex: '0', 'aria-label': 'Position',
+      'aria-valuemin': '0', 'aria-valuemax': '0', 'aria-valuenow': '0'
+    });
+    els.fill = el('div', 'media-player_progress_fill');
+    els.progress.appendChild(els.fill);
 
-    bar.appendChild(info);
+    bar.appendChild(els.info);
     bar.appendChild(controls);
-    bar.appendChild(win);
+    bar.appendChild(els.progress);
     root.appendChild(videoBox);
     root.appendChild(bar);
-    stage.appendChild(root);
-    stage.setAttribute('data-player-active', '');
+    d.body.appendChild(root);
 
     els.mode.addEventListener('click', function () { api.setMode(S.mode === 'listen' ? 'watch' : 'listen'); });
     els.back.addEventListener('click', function () { api.skip(-SKIP); });
@@ -235,17 +274,64 @@
       var i = RATES.indexOf(S.rate);
       api.setRate(RATES[(i + 1) % RATES.length]);
     });
-    els.expand.addEventListener('click', function () { api.expand(); });
-    els.close.addEventListener('click', function () { api.close(); });
+    // Floating: the title is the way back to the sermon page.
+    els.info.addEventListener('click', function () { if (S.presentation === 'floating') api.expand(); });
+    els.info.addEventListener('keydown', function (e) {
+      if (S.presentation !== 'floating') return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.expand(); }
+    });
     root.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && S.presentation === 'floating') { e.preventDefault(); api.close(); }
     });
+    scrub();
     paint();
+  }
+
+  /* The progress edge: pointer scrubbing (seek on release, fill follows the finger) and arrow keys. */
+  var scrubbing = null;
+  function fractionAt(e) {
+    var r = els.progress.getBoundingClientRect();
+    return r.width ? clamp((e.clientX - r.left) / r.width, 0, 1) : 0;
+  }
+  function scrub() {
+    var pr = els.progress;
+    pr.addEventListener('pointerdown', function (e) {
+      if (!api.getDuration()) return;
+      scrubbing = fractionAt(e);
+      pr.setPointerCapture && pr.setPointerCapture(e.pointerId);
+      paint();
+      e.preventDefault();
+    });
+    pr.addEventListener('pointermove', function (e) {
+      if (scrubbing === null) return;
+      scrubbing = fractionAt(e);
+      paint();
+    });
+    function release(e) {
+      if (scrubbing === null) return;
+      var f = fractionAt(e);
+      scrubbing = null;
+      api.seek(f * api.getDuration(), { play: false });
+    }
+    pr.addEventListener('pointerup', release);
+    pr.addEventListener('pointercancel', function () { scrubbing = null; paint(); });
+    pr.addEventListener('keydown', function (e) {
+      var dur = api.getDuration();
+      if (!dur) return;
+      var t = api.getTime(), step = e.shiftKey ? 30 : 5;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') t += step;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') t -= step;
+      else if (e.key === 'Home') t = 0;
+      else if (e.key === 'End') t = dur;
+      else return;
+      e.preventDefault();
+      api.seek(clamp(t, 0, dur));
+    });
   }
 
   function buildIframe() {
     if (!videoId) return;
-    iframe = videoBox.querySelector('iframe') || $('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]', stage);
+    iframe = videoBox.querySelector('iframe') || (stage && $('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]', stage));
     if (iframe) {
       if (iframe.parentNode !== videoBox) videoBox.appendChild(iframe); // one move, before the API attaches
       if (iframe.src.indexOf('enablejsapi=1') === -1) {
@@ -279,11 +365,30 @@
     els.mode.setAttribute('aria-label', S.mode === 'listen' ? 'Switch to video' : 'Switch to audio');
     els.rate.textContent = (S.rate === 1 ? '1' : String(S.rate).replace(/^0/, '')) + '×';
     els.rate.setAttribute('aria-label', 'Playback speed ' + S.rate + '×');
+
     var dur = api.getDuration();
-    els.time.textContent = fmt(api.getTime()) + (dur ? ' / ' + fmt(dur) : '');
+    var t = scrubbing === null ? api.getTime() : scrubbing * dur;
+    els.time.textContent = fmt(t) + (dur ? ' / ' + fmt(dur) : '');
+    var pct = dur ? clamp(t / dur, 0, 1) * 100 : 0;
+    els.progress.style.setProperty('--player-progress', pct.toFixed(2) + '%');
+    els.progress.setAttribute('aria-valuemax', String(Math.round(dur)));
+    els.progress.setAttribute('aria-valuenow', String(Math.round(t)));
+    els.progress.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
+    [els.artist, els.time, els.status].forEach(function (n) { n.toggleAttribute('data-empty', !n.textContent); });
+
+    var floating = S.presentation === 'floating';
+    if (floating) {
+      els.info.setAttribute('role', 'button');
+      els.info.setAttribute('tabindex', '0');
+      els.info.setAttribute('aria-label', title + ' — back to the sermon page');
+    } else {
+      els.info.removeAttribute('role');
+      els.info.removeAttribute('tabindex');
+      els.info.removeAttribute('aria-label');
+    }
     root.inert = S.presentation === 'hidden';
-    d.body.classList.toggle('has-player-dock', S.presentation === 'floating');
-    if (S.presentation === 'floating') {
+    d.body.classList.toggle('has-player-dock', floating);
+    if (floating) {
       d.documentElement.style.setProperty('--player-dock-height', root.offsetHeight + 'px');
     } else {
       d.documentElement.style.removeProperty('--player-dock-height');
@@ -381,8 +486,7 @@
           var s = e.data;
           if (s === YT_PLAYING) {
             if (ytHoldPause) { ytHoldPause = false; yt.pauseVideo(); return; }
-            if (!S.userStarted) {
-              S.userStarted = true;
+            if (started()) {
               var t = maybeResume();
               if (t) yt.seekTo(t, true);
             }
@@ -428,7 +532,7 @@
     audio.playbackRate = S.rate;
     audio.addEventListener('playing', function () {
       if (S.mode !== 'listen') { audio.pause(); return; }
-      S.userStarted = true;
+      started();
       if (S.pending === 'listen') {
         S.pending = null;
         clearTimeout(switchTimer);
@@ -515,36 +619,111 @@
   }
 
   /* ---------- presentation ---------- */
+  // Inline = the root laid over the stage in document coordinates (it scrolls
+  // with the page like any absolute box); the stage holds the root's height.
+  // Floating = position:fixed from the stylesheet. The root never moves in the
+  // DOM, so neither the iframe nor the audio is ever interrupted.
+  function place() {
+    if (!root || !stage || S.presentation !== 'inline') return;
+    var r = stage.getBoundingClientRect();
+    root.style.left = Math.round(r.left + w.scrollX) + 'px';
+    root.style.top = Math.round(r.top + w.scrollY) + 'px';
+    root.style.width = Math.round(r.width) + 'px';
+    stage.style.height = root.offsetHeight + 'px';
+    S.anchor = r.top + w.scrollY;
+  }
   var animateTimer = 0;
   function setPresentation(p) {
     if (S.presentation === p) return;
     if (p === 'floating') {
-      stage.style.minHeight = root.offsetHeight + 'px';
+      root.style.left = root.style.top = root.style.width = '';
       root.setAttribute('data-animate', '');
       clearTimeout(animateTimer);
       animateTimer = setTimeout(function () { root.removeAttribute('data-animate'); }, 300);
     } else {
-      stage.style.minHeight = '';
       root.removeAttribute('data-animate');
     }
     S.presentation = p;
     paint();
+    if (p === 'inline') place();
     emit(p === 'floating' ? 'float' : p === 'inline' ? 'inline' : 'hidden');
   }
-  function watchStage() {
-    if (!('IntersectionObserver' in w)) return;
-    var io = new IntersectionObserver(function (entries) {
-      var ratio = entries[entries.length - 1].intersectionRatio;
-      if (ratio >= FLOAT_IN) {
-        S.dismissed = false;
-        if (S.presentation !== 'inline') setPresentation('inline');
-        return;
-      }
-      if (ratio < FLOAT_OUT && S.userStarted && S.presentation === 'inline' && !S.dismissed) {
-        setPresentation('floating');
-      }
-    }, { threshold: [0, FLOAT_OUT, FLOAT_IN, 1] });
-    io.observe(stage);
+  // Where the stage is decides inline vs floating — unless the transcript sheet is
+  // open over the page on a phone (the bar sits above the sheet so the sermon can be
+  // controlled while reading), or there is no stage on this page at all.
+  function applyRatio() {
+    if (S.sheet || !stage) {
+      if (S.userStarted && S.presentation !== 'floating') setPresentation('floating');
+      return;
+    }
+    var ratio = S.ratio;
+    if (ratio >= FLOAT_IN) {
+      S.dismissed = false;
+      if (S.presentation !== 'inline') setPresentation('inline');
+      return;
+    }
+    if (ratio < FLOAT_OUT && S.userStarted && S.presentation === 'inline' && !S.dismissed) {
+      setPresentation('floating');
+    }
+  }
+  var io = null, ro = null, placeTick = 0;
+  function observeStage() {
+    if (io) io.disconnect();
+    if (ro) ro.disconnect();
+    if (!stage) return;
+    stage.setAttribute('data-player-active', '');
+    if ('IntersectionObserver' in w) {
+      io = new IntersectionObserver(function (entries) {
+        S.ratio = entries[entries.length - 1].intersectionRatio;
+        applyRatio();
+      }, { threshold: [0, FLOAT_OUT, FLOAT_IN, 1] });
+      io.observe(stage);
+    }
+    if ('ResizeObserver' in w) {
+      ro = new ResizeObserver(function () { place(); });
+      ro.observe(stage);
+      ro.observe(root);
+    }
+    place();
+  }
+  function attachStage(el) {
+    stage = el || null;
+    S.ratio = stage ? 1 : 0;
+    observeStage();
+    applyRatio();
+  }
+  function watchPage() {
+    w.addEventListener('resize', place);
+    w.addEventListener('load', place);
+    if (d.fonts && d.fonts.ready) d.fonts.ready.then(place);
+    // Anything above the stage changing height moves it: a cheap check per scroll frame.
+    w.addEventListener('scroll', function () {
+      if (placeTick || !stage || S.presentation !== 'inline') return;
+      placeTick = requestAnimationFrame(function () {
+        placeTick = 0;
+        var top = stage.getBoundingClientRect().top + w.scrollY;
+        if (Math.abs(top - S.anchor) > 1) place();
+      });
+    }, { passive: true });
+    d.addEventListener('vci:modal:open', function (e) {
+      if (!e.detail || e.detail.key !== 'transcript') return;
+      S.sheet = true;
+      root.setAttribute('data-over-sheet', '');
+      applyRatio();
+    });
+    d.addEventListener('vci:modal:close', function (e) {
+      if (!e.detail || e.detail.key !== 'transcript') return;
+      S.sheet = false;
+      root.removeAttribute('data-over-sheet');
+      applyRatio();
+    });
+  }
+  // Playback has started: the bar may now float (and must, over an open sheet).
+  function started() {
+    if (S.userStarted) return false;
+    S.userStarted = true;
+    applyRatio();
+    return true;
   }
 
   /* ---------- the API ---------- */
@@ -599,7 +778,7 @@
       } else {
         S.lastTime = s;
       }
-      S.userStarted = S.userStarted || !!opts.play;
+      if (opts.play) started();
       paint();
       emit('time');
     },
@@ -674,9 +853,14 @@
     },
     expand: function () {
       S.dismissed = false;
+      if (!stage) {
+        // Away from the sermon page: the title takes you back to it.
+        if (S.href) nav.go(S.href, true);
+        return;
+      }
       stage.scrollIntoView({ behavior: reduced.matches ? 'auto' : 'smooth', block: 'center' });
       var focus = els.play;
-      setTimeout(function () { if (S.presentation === 'floating') setPresentation('inline'); focus.focus({ preventScroll: true }); }, reduced.matches ? 0 : 400);
+      setTimeout(function () { if (S.presentation === 'floating' && !S.sheet) setPresentation('inline'); focus.focus({ preventScroll: true }); }, reduced.matches ? 0 : 400);
     },
     close: function () {
       api.pause();
@@ -704,43 +888,276 @@
   };
   w.ctkPlayer = api;
 
-  /* ---------- init ---------- */
-  function init() {
-    if (root) return true;
-    stage = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
-    if (!stage) return false;
-    videoId = (stage.getAttribute('data-player-youtube') || stage.getAttribute('data-youtube-id') || '').trim() || null;
+  /* ---------- items ---------- */
+  function readStage(el) {
     var qs = null;
     try { qs = new URLSearchParams(location.search).get('ctk-audio'); } catch (e) { /* old browser */ }
-    audioUrl = (qs || stage.getAttribute('data-player-audio') || stage.getAttribute('data-audio-url') || '').trim() || null;
-    S.offset = Number(stage.getAttribute('data-audio-offset')) || 0;
-    audioDuration = Number(stage.getAttribute('data-audio-duration')) || 0;
-    api.hasVideo = !!videoId;
-    api.hasAudio = !!audioUrl;
-    if (!videoId && !audioUrl) { stage.style.display = 'none'; return true; }
-
+    return {
+      videoId: (el.getAttribute('data-player-youtube') || el.getAttribute('data-youtube-id') || '').trim() || null,
+      audioUrl: (qs || el.getAttribute('data-player-audio') || el.getAttribute('data-audio-url') || '').trim() || null,
+      offset: Number(el.getAttribute('data-audio-offset')) || 0,
+      audioDuration: Number(el.getAttribute('data-audio-duration')) || 0
+    };
+  }
+  function readPage() {
     var h1 = $('h1');
     title = h1 ? h1.textContent.trim() : d.title;
     artist = Array.prototype.map.call(d.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) {
       return n.textContent.trim();
     }).filter(Boolean).join(', ');
     artwork = videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/hqdefault.jpg' : null;
-
+    if (els.title) els.title.textContent = title;
+    if (els.artist) els.artist.textContent = artist;
+  }
+  // Load the sermon on this page into the player (first load, or a new sermon reached by navigation).
+  function mount(el) {
+    var src = readStage(el);
+    if (!src.videoId && !src.audioUrl) { el.style.display = 'none'; return false; }
+    clearTimeout(switchTimer);
+    clearInterval(tickTimer); tickTimer = 0;
+    if (audio) { audio.pause(); audio = null; }
+    if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    iframe = null; yt = null; ytReady = false; ytHoldPause = false; ytDuration = 0;
+    videoId = src.videoId; audioUrl = src.audioUrl; S.offset = src.offset; audioDuration = src.audioDuration;
+    api.hasVideo = !!videoId; api.hasAudio = !!audioUrl; api.ready = false;
+    S.slug = location.pathname.replace(/\/+$/, '').split('/').pop() || 'home';
+    S.href = location.pathname + location.search;
+    S.mode = 'watch'; S.status = 'idle'; S.userStarted = false; S.dismissed = false; S.pending = null; S.lastTime = 0; S.sheet = false;
+    resumed = false; scrubbing = null;
     var prefs = load(PREF_KEY) || {};
     if (RATES.indexOf(prefs.rate) !== -1) S.rate = prefs.rate;
     if (prefs.mode === 'listen' && audioUrl) S.mode = 'listen';
     if (!videoId) S.mode = 'listen';
     if (!audioUrl) S.mode = 'watch';
-
-    css();
-    build();
+    if (!root) { css(); build(); }
+    root.removeAttribute('data-over-sheet');
+    root.setAttribute('data-has-video', String(!!videoId));
+    root.setAttribute('data-has-audio', String(!!audioUrl));
+    var controls = $('.media-player_controls', root);
+    if (videoId && audioUrl) { if (!els.mode.parentNode) controls.insertBefore(els.mode, controls.firstChild); }
+    else if (els.mode.parentNode) els.mode.parentNode.removeChild(els.mode);
+    readPage();
+    say('');
     buildIframe();
     if (iframe) loadYT();
-    if (S.mode === 'listen') { ensureAudio(); api.ready = true; emit('ready'); }
-    watchStage();
+    if (S.mode === 'listen') { ensureAudio(); api.ready = true; }
+    if (S.presentation === 'hidden') S.presentation = 'inline';
+    attachStage(el);
+    paint();
+    emit('ready');
+    return true;
+  }
+  // A page was swapped in: the same sermon re-anchors, a different one loads, none leaves the bar floating.
+  function adopt() {
+    var el = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
+    if (!el) { attachStage(null); return; }
+    var src = readStage(el);
+    if (src.videoId === videoId && src.audioUrl === audioUrl) {
+      S.sheet = false;
+      root.removeAttribute('data-over-sheet');
+      S.href = location.pathname + location.search;
+      readPage();
+      attachStage(el);
+      return;
+    }
+    savePosition(true);
+    api.pause();
+    mount(el);
+  }
 
+  /* ---------- navigation: keep the page alive while the sermon plays ----------
+     A normal link unloads the document and everything in it, the audio included.
+     While the player is active (started and not closed), same-site links fetch the
+     next page and swap its content in place: the announcement bar, navbar and
+     footer stay (they are the same on every page), the sections between them are
+     replaced, the new page's own scripts run, and Webflow, Finsweet and narthex
+     are told about the new content. Closing the player returns the site to
+     ordinary navigation. Modifier-clicks, new-tab links, hashes, downloads and
+     files are always left to the browser. */
+  var nav = (function () {
+    var ctl = null;
+    var current = location.pathname + location.search;
+    var seenScripts = {};
+    var seenStyles = {};
+    var FILE = /\.(pdf|mp3|m4a|wav|zip|jpe?g|png|gif|svg|webp|avif|vtt|txt|csv|xml|rss|json|ics)$/i;
+    var KEEP = '.announcement-bar, nav.navbar, [vci-nav="header"], footer.footer, footer';
+
+    function active() { return !!root && S.userStarted && S.presentation !== 'hidden'; }
+    function remember() {
+      Array.prototype.forEach.call(d.body.querySelectorAll(':scope > script:not([src])'), function (sc) { seenScripts[sc.textContent] = true; });
+      Array.prototype.forEach.call(d.querySelectorAll('style'), function (st) { seenStyles[st.textContent] = true; });
+    }
+    function cloneScript(old) {
+      var sc = d.createElement('script');
+      Array.prototype.forEach.call(old.attributes, function (a) { sc.setAttribute(a.name, a.value); });
+      sc.textContent = old.textContent;
+      return sc;
+    }
+    function hasScript(src) {
+      return !!Array.prototype.some.call(d.scripts, function (x) { return x.src === src; });
+    }
+    function onClick(e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a || !active()) return;
+      if ((a.target && a.target !== '_self') || a.hasAttribute('download') || a.closest('[data-player-nav="off"]')) return;
+      if (root.contains(a)) return;
+      var url;
+      try { url = new URL(a.href, location.href); } catch (x) { return; }
+      if (url.origin !== location.origin || !/^https?:$/.test(url.protocol)) return;
+      if (FILE.test(url.pathname)) return;
+      if (url.pathname === location.pathname && url.search === location.search) return; // same page or a hash
+      e.preventDefault();
+      go(url.href, true);
+    }
+    function go(href, push) {
+      if (ctl) ctl.abort();
+      var mine = ctl = ('AbortController' in w) ? new AbortController() : null;
+      d.documentElement.setAttribute('data-player-navigating', '');
+      fetch(href, { credentials: 'same-origin', headers: { Accept: 'text/html' }, signal: mine && mine.signal })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text().then(function (html) { return { html: html, url: r.url || href }; });
+        })
+        .then(function (res) {
+          if (mine !== ctl) return;
+          ctl = null;
+          swap(new DOMParser().parseFromString(res.html, 'text/html'), res.url, push);
+        })
+        .catch(function (err) {
+          if (err && err.name === 'AbortError') return;
+          d.documentElement.removeAttribute('data-player-navigating');
+          location.href = href; // the page the browser would have shown anyway
+        });
+    }
+    function swap(doc, url, push) {
+      var oldWrap = $('.page-wrapper'), newWrap = doc.querySelector('.page-wrapper');
+      if (!oldWrap || !newWrap) { location.href = url; return; }
+      savePosition(true);
+
+      if (push) history.pushState({ ctkPlayer: true }, '', url);
+      current = location.pathname + location.search;
+
+      d.title = doc.title;
+      ['meta[name="description"]', 'meta[property="og:title"]', 'meta[property="og:description"]', 'meta[property="og:image"]', 'meta[property="og:url"]', 'link[rel="canonical"]'].forEach(function (sel) {
+        var from = doc.querySelector(sel), to = $(sel);
+        if (from && to) { if (from.hasAttribute('content')) to.setAttribute('content', from.getAttribute('content')); if (from.hasAttribute('href')) to.setAttribute('href', from.getAttribute('href')); }
+      });
+      ['data-wf-page', 'data-wf-collection', 'data-wf-item-slug', 'data-wf-item-id'].forEach(function (name) {
+        var v = doc.documentElement.getAttribute(name);
+        if (v === null) d.documentElement.removeAttribute(name); else d.documentElement.setAttribute(name, v);
+      });
+      d.body.className = doc.body.className;
+
+      // Stylesheets and page-level styles the new page brings.
+      Array.prototype.forEach.call(doc.querySelectorAll('link[rel="stylesheet"]'), function (l) {
+        if (!$('link[rel="stylesheet"][href="' + l.getAttribute('href') + '"]')) d.head.appendChild(d.adoptNode(l));
+      });
+      Array.prototype.forEach.call(doc.querySelectorAll('head style, body > style'), function (st) {
+        if (seenStyles[st.textContent]) return;
+        seenStyles[st.textContent] = true;
+        d.head.appendChild(d.adoptNode(st));
+      });
+
+      // Content: everything between the kept navbar and footer.
+      var footer = null;
+      Array.prototype.slice.call(oldWrap.children).forEach(function (c) {
+        if (c.matches(KEEP)) { if (c.matches('footer, footer.footer')) footer = c; return; }
+        oldWrap.removeChild(c);
+      });
+      var scripts = [];
+      Array.prototype.slice.call(newWrap.children).forEach(function (c) {
+        if (c.matches(KEEP)) return;
+        var node = d.adoptNode(c);
+        if (footer) oldWrap.insertBefore(node, footer); else oldWrap.appendChild(node);
+        Array.prototype.push.apply(scripts, node.querySelectorAll ? node.querySelectorAll('script') : []);
+        if (node.tagName === 'SCRIPT') scripts.push(node);
+      });
+      // Scripts arriving by DOM insertion are inert; replace each with a live copy, in order.
+      scripts.forEach(function (sc) {
+        if (sc.src && hasScript(sc.src)) { sc.parentNode.removeChild(sc); return; }
+        sc.parentNode.replaceChild(cloneScript(sc), sc);
+      });
+      // The new page's own body-level code (page custom code), and the site's
+      // registered scripts that bind to elements at load.
+      Array.prototype.forEach.call(doc.body.querySelectorAll(':scope > script'), function (sc) {
+        if (sc.src) {
+          if (/website-files\.com\/.*%2F.*\.js/.test(sc.src) && !/media-player/.test(sc.src)) {
+            // registered scripts re-run so they bind to the new content
+            d.body.appendChild(cloneScript(sc));
+          } else if (!hasScript(sc.src)) {
+            d.body.appendChild(cloneScript(sc));
+          }
+          return;
+        }
+        if (seenScripts[sc.textContent]) return;
+        seenScripts[sc.textContent] = true;
+        d.body.appendChild(cloneScript(sc));
+      });
+
+      // Current-page marks on nav links.
+      Array.prototype.forEach.call(d.querySelectorAll('a.w--current'), function (a) { a.classList.remove('w--current'); a.removeAttribute('aria-current'); });
+      Array.prototype.forEach.call(d.querySelectorAll('nav a[href], footer a[href]'), function (a) {
+        var u; try { u = new URL(a.href, location.href); } catch (x) { return; }
+        if (u.origin === location.origin && u.pathname === location.pathname) { a.classList.add('w--current'); a.setAttribute('aria-current', 'page'); }
+      });
+
+      // Libraries that scan the page at load.
+      try {
+        var W = w.Webflow;
+        if (W && W.destroy && W.ready) { W.destroy(); W.ready(); var ix = W.require && W.require('ix2'); if (ix && ix.init) ix.init(); }
+      } catch (e) { /* Webflow runtime changed */ }
+      try {
+        var fa = w.FinsweetAttributes;
+        if (fa && fa.modules) {
+          for (var k in fa.modules) { if (fa.modules[k] && typeof fa.modules[k].restart === 'function') fa.modules[k].restart(); }
+          if (typeof fa.load === 'function' && $('[fs-list-element]') && !fa.modules.list) fa.load('list');
+        }
+      } catch (e) { /* Finsweet runtime changed */ }
+      try {
+        var v = w.vci;
+        if (v && v.accordion && v.accordion.init) v.accordion.init();
+        if (v && v.nav && v.nav.measure) v.nav.measure();
+      } catch (e) { /* narthex changed */ }
+
+      // Scroll like a new page would, then hand focus to the heading.
+      var hash = location.hash && $(location.hash);
+      if (hash) hash.scrollIntoView(); else w.scrollTo(0, 0);
+      var h1 = $('.page-wrapper h1');
+      if (h1) { if (!h1.hasAttribute('tabindex')) h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); }
+
+      adopt();
+      d.documentElement.removeAttribute('data-player-navigating');
+      emit('navigate', { url: url });
+    }
+    function onPop() {
+      var here = location.pathname + location.search;
+      if (here === current) return; // a hash change
+      if (active()) go(location.href, false);
+      else location.reload();
+    }
+    function start() {
+      remember();
+      d.addEventListener('click', onClick);
+      w.addEventListener('popstate', onPop);
+    }
+    return { go: go, start: start, active: active };
+  })();
+
+  /* ---------- init ---------- */
+  var booted = false;
+  function init() {
+    if (booted) return true;
+    var el = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
+    if (!el) return false;
+    booted = true;
+    css();
+    build();
+    watchPage();
+    nav.start();
     w.addEventListener('pagehide', function () { savePosition(true); });
     d.addEventListener('visibilitychange', function () { if (d.visibilityState === 'hidden') savePosition(true); });
+    mount(el);
     return true;
   }
 

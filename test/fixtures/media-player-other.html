@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" data-wf-page="PAGE_OTHER" data-wf-site="site">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Other | Christ the King Church</title>
+  <meta name="description" content="Another page">
+  <style>
+    body { margin: 0; background: #151413; color: #fff; font-family: sans-serif; }
+    .navbar { position: sticky; top: 0; height: 72px; background: #000; z-index: 100; }
+    .announcement-bar { height: 40px; background: #222; }
+    .filler { height: 2000px; }
+    footer { height: 200px; background: #111; }
+  </style>
+  <style>/* page-level head style */ .other-only { color: gold; }</style>
+</head>
+<body class="body">
+  <div class="main-wrapper">
+    <div class="page-wrapper">
+      <div class="announcement-bar w-dyn-list"></div>
+      <nav class="navbar" vci-nav="header"><a href="/other/page" data-test="nav-other">Other</a> <a href="/sermon/love-the-standard" data-test="nav-sermon">This sermon</a></nav>
+      <section class="section">
+        <h1 class="other-only">Other page</h1>
+        <p><a href="/sermon/love-the-standard" data-test="content-sermon">Back to the sermon</a></p>
+        <script>window.__otherRan = (window.__otherRan || 0) + 1;</script>
+        <div class="filler"></div>
+      </section>
+      <footer class="footer"><a href="/other/page">Footer other</a></footer>
+    </div>
+  </div>
+  <button class="scroll-to-top_button" aria-label="Scroll to top"></button>
+  <script>window.__sitewideRan = (window.__sitewideRan || 0) + 1;</script>
+  <script>window.__otherPageCode = (window.__otherPageCode || 0) + 1;</script>
+  <script src="/media-player.js"></script>
+</body>
+</html>

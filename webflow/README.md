@@ -205,42 +205,62 @@ Untouched and still registered scripts: `LivestreamResolver`,
 
 `registered/media-player.js` is one player for both of a sermon's sources:
 **Watch**, the YouTube IFrame API, and **Listen**, the podcast MP3 in an HTML
-`<audio>`. It renders inside the Media Template's `.video-embed` stage, floats
-to a dock when the video scrolls out of view after someone has pressed play,
-and comes back inline when they scroll back. Desktop and phone use the same
-component, state and controls; only the dock's geometry differs (a 26rem card
-in the bottom-right corner on desktop, an edge-to-edge strip at the bottom on
-phones). Full contract in the file's header comment; the design reasoning is
-in [`docs/persistent-player-discovery.md`](../docs/persistent-player-discovery.md).
+`<audio>`. Its bar is styled like a series-playlist row (title, speaker and
+time on the meta line, the site's type styles and tokens) with a gold progress
+edge you can scrub, and sits under the video on the Media Template. Once
+someone has pressed play and the video scrolls out of view, the bar floats:
+title, speaker, time, play/pause and progress, in the bottom-right corner on
+desktop and across the bottom on phones. Tapping the title goes back to the
+sermon page. While YouTube is actually playing it stays above the floating bar
+at a legal size (its policy forbids hiding a playing player); in Listen mode,
+or paused, the bar is on its own. Full contract in the file's header comment;
+the design reasoning is in
+[`docs/persistent-player-discovery.md`](../docs/persistent-player-discovery.md).
 
-What it does: Listen ⇄ Watch switching that keeps the position and speed
-(near-seamless hard handoff: the MP3 starts muted at the video's time, then
-YouTube pauses); ±15 s; speed 0.75–2×; lock-screen metadata and controls in
-Listen mode through the Media Session API; the last position per sermon and
-the preferred mode and speed remembered in `localStorage`; Watch-only and
-Listen-only sermons; loading and error states that fall back to the other
-source and never restart the sermon.
+**Playback carries across pages.** A normal link unloads the document and the
+audio with it, so while the player is active (started and not closed) the
+script handles same-site links itself: it fetches the next page and swaps its
+content in place. The announcement bar, navbar and footer stay (they are the
+same on every page), the sections between them are replaced, the new page's
+own scripts run, and Webflow (`destroy`/`ready`/IX2), Finsweet Attributes
+(`modules.*.restart()`) and narthex (`accordion.init()`, `nav.measure()`) are
+told about the new content. The player root is a child of `<body>`, outside
+the swapped content, so the YouTube iframe and the audio are never touched.
+Back/forward work the same way. Closing the player restores ordinary
+navigation; modifier-clicks, new-tab links, hashes, downloads and files are
+always left to the browser; `data-player-nav="off"` on a link or an ancestor
+opts it out. Arriving on another sermon page loads that sermon into the
+player, paused, and remembers where the previous one was.
+
+What else it does: Listen ⇄ Watch switching that keeps the position and
+speed (the MP3 starts muted at the video's time, then YouTube pauses); ±15 s;
+speed 0.75–2×; lock-screen metadata and controls in Listen mode through the
+Media Session API; the last position per sermon and the preferred mode and
+speed remembered in `localStorage`; Watch-only and Listen-only sermons;
+loading and error states that fall back to the other source and never restart
+the sermon. On a phone with the transcript sheet open, the bar floats above
+the sheet and the sheet's Synchronize button and bottom padding move up by the
+bar's height.
 
 What it does not do, by design: play YouTube hidden or in the background,
 draw anything over the YouTube player, or shrink it below 200×200px — all
-three are YouTube API policy. The floating video on a phone is therefore a
-full-width strip, and the controls always sit under the video.
+three are YouTube API policy.
 
 ### Designer side
 
 | Where | What | Status |
 | --- | --- | --- |
 | Media Template → `.video-embed` | `data-youtube-id` bound to **YouTube Video ID** | exists |
-| Media Template → `.video-embed` | **`data-audio-url` bound to Audio URL** | **to add** — a custom attribute whose value is bound to the CMS field. Without it the player is Watch-only. The Data API cannot write a bound attribute, so this is a Designer step. |
+| Media Template → `.video-embed` | `data-audio-url` bound to **Audio URL** | done 2026-10-14 |
 | Media Template → `.video-embed` | `data-audio-offset` bound to Audio Offset Seconds (optional, once that field exists) | later |
-| Media Template → transcript embed | paste the current `embeds/media-template-transcript.html` | **to do** — the live embed still owns the iframe itself; the repo version defers to the player when it is on the page and works alone when it is not |
+| Media Template → transcript embed | the current `embeds/media-template-transcript.html` | done 2026-10-14 — defers to the player when it is on the page, works alone when it is not |
 | Site settings → Registered scripts | `mediaPlayer` 1.0.0 registered and applied to the site footer | done 2026-10-14, live on the next site publish |
 
-The dock is built by the script (title, status, Listen/Watch, −15, play,
-+15, speed, time, expand, close), styled only with the site's tokens
-(`--_theme---*`, `--border-radius-*`, JetBrains Mono) and its own
-`media-player_*` classes, so nothing in the Designer has to be drawn for it.
-Override with CSS on those classes if the look needs adjusting.
+The bar is built by the script and uses the site's own classes where a
+playlist row does (`text-style-title-small`, `media-meta`,
+`text-style-media-meta`, `meta-divider`) plus its `media-player_*` classes and
+the tokens (`--_theme---*`, `--border-radius-*`), so nothing in the Designer
+has to be drawn for it and restyling those site classes restyles the bar.
 
 ### Hosting the script
 
@@ -254,7 +274,8 @@ https://cdn.jsdelivr.net/gh/volentecreative/christtheking@<commit>/webflow/regis
 ```
 
 Registered 2026-10-14 as `mediaPlayer` 1.0.0 (commit `c87209a`) and applied
-to the site footer through the Data API. To ship a change: commit it, then
+to the site footer through the Data API; 1.1.0 the same day (bar redesign,
+cross-page playback). To ship a change: commit it, then
 re-register with the new commit's URL and hash and bump the version:
 
 ```sh
@@ -272,18 +293,22 @@ pinned commit never changes, so the hash never goes stale; `@main` would.
 `isPlaying()`, `play()`, `pause()`, `toggle()`, `seek(s, { play })`,
 `skip(±s)`, `setMode('watch' | 'listen')`, `setRate(r)`, `expand()`, `close()`,
 `on(event, fn)`. Events on `document`: `ctk:player:ready`, `play`, `pause`,
-`ended`, `time`, `mode`, `float`, `inline`, `hidden`, `error`. The transcript
-embed is the first consumer.
+`ended`, `time`, `mode`, `float`, `inline`, `hidden`, `error`, `navigate`. The
+transcript embed is the first consumer.
 
 ### Tests
 
 `npm run test:browser` runs `test/media-player.test.mjs` alongside the
 speaker-names test: the YouTube IFrame API is stubbed with a fake player that
 keeps time, the MP3 is a generated silent WAV, and the transcript embed is
-loaded from its source file. It covers inline → floating → inline without an
-iframe reload, the phone strip's 200px minimum, Watch ⇄ Listen position and
-speed, paused switching, a 404 MP3 falling back to video, ±15 and speed,
-close and dismissal, resume on the next visit, the embed following the
+loaded from its source file, with stand-ins for Webflow and Finsweet. It
+covers inline → floating → inline without an iframe reload, the phone strip's
+200px minimum, Watch ⇄ Listen position and speed, paused switching, a 404 MP3
+falling back to video, ±15 and speed, scrubbing, the transcript sheet, close
+and dismissal, resume on the next visit, in-place navigation (playback and
+the iframe survive, the new page's scripts run, Webflow and Finsweet are
+re-initialised, back/forward, hash and file links left alone, a different
+sermon loading, ordinary navigation once closed), the embed following the
 player, and the embed standing alone when the script is absent.
 
 ## `navbarSpeakerNames` — filling the media card's speaker

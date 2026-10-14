@@ -15,6 +15,7 @@ import { chromium } from 'playwright';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const FIXTURE = read('./fixtures/media-player.html');
+const OTHER = read('./fixtures/media-player-other.html');
 const EMBED = read('../webflow/embeds/media-template-transcript.html');
 const PLAYER = read('../webflow/registered/media-player.js');
 
@@ -86,6 +87,7 @@ test.before(async () => {
       return res.writeHead(200, { 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': AUDIO.length }).end(AUDIO);
     }
     if (url.pathname === '/missing.mp3') return res.writeHead(404).end();
+    if (url.pathname.startsWith('/other')) return res.writeHead(200, { 'content-type': 'text/html' }).end(OTHER);
     if (url.pathname.startsWith('/sermon')) {
       const opts = {};
       if (url.searchParams.has('video')) opts.video = url.searchParams.get('video') || null;
@@ -120,6 +122,12 @@ async function open(path = '/sermon/love-the-standard', { viewport } = {}) {
   return { page, ctx, errors, loads: () => embedLoads };
 }
 
+// The fixture's navbar is sticky like the site's, so a link scrolled to the top edge sits under it.
+const clickLink = async (page, sel) => {
+  await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' }));
+  await page.click(sel);
+};
+
 const state = (page) => page.evaluate(() => ({
   mode: ctkPlayer.getMode(), status: ctkPlayer.getStatus(), presentation: ctkPlayer.getPresentation(),
   time: ctkPlayer.getTime(), playing: ctkPlayer.isPlaying(), rate: ctkPlayer.getRate(),
@@ -129,7 +137,12 @@ const state = (page) => page.evaluate(() => ({
 test('renders one player inside the stage: video box, bar, both-source controls, iframe with the JS API', async () => {
   const { page, ctx, errors, loads } = await open();
   assert.equal(await page.$$eval('[data-player="root"]', (e) => e.length), 1);
-  assert.ok(await page.$('.video-embed[data-player-active] > .media-player > .media-player_video > iframe'));
+  assert.ok(await page.$('body > .media-player > .media-player_video > iframe'), 'the root is a child of body, not of the page content');
+  const laid = await page.evaluate(() => {
+    const s = document.querySelector('.video-embed').getBoundingClientRect(), r = document.querySelector('[data-player="root"]').getBoundingClientRect();
+    return { dx: Math.abs(s.left - r.left), dy: Math.abs(s.top - r.top), dw: Math.abs(s.width - r.width), dh: Math.abs(s.height - r.height) };
+  });
+  assert.ok(laid.dx < 1 && laid.dy < 1 && laid.dw < 1 && laid.dh < 1, `root laid exactly over the stage ${JSON.stringify(laid)}`);
   const src = await page.$eval('.media-player_video iframe', (f) => f.src);
   assert.match(src, /youtube\.com\/embed\/2qsHQo0xGP8\?.*enablejsapi=1.*origin=/);
   assert.ok(await page.$('[data-player="mode"]'), 'Listen/Watch toggle present when both sources exist');
@@ -177,23 +190,123 @@ test('floats when the stage scrolls away after playback started, keeps the same 
     const cs = getComputedStyle(r);
     const box = r.getBoundingClientRect();
     return { position: cs.position, z: cs.zIndex, token: document.querySelector('iframe').__token,
-      stageMin: document.querySelector('.video-embed').style.minHeight, bottomGap: innerHeight - box.bottom,
+      stageMin: document.querySelector('.video-embed').style.height, bottomGap: innerHeight - box.bottom,
       rightGap: innerWidth - box.right, videoH: document.querySelector('.media-player_video').getBoundingClientRect().height,
-      dockClass: document.body.classList.contains('has-player-dock'), windowVisible: getComputedStyle(r.querySelector('.media-player_window')).display };
+      dockClass: document.body.classList.contains('has-player-dock'),
+      hidden: ['mode', 'back', 'forward', 'rate'].map((n) => getComputedStyle(r.querySelector('[data-player="' + n + '"]')).display),
+      progress: getComputedStyle(r.querySelector('[data-player="progress"]')).display,
+      titleRole: r.querySelector('[data-player="info"]').getAttribute('role') };
   });
   assert.equal(floating.position, 'fixed');
   assert.equal(floating.z, '95', 'under the sticky navbar (100), over scroll-to-top (90)');
   assert.equal(floating.token, 'same', 'the iframe element was not replaced');
   assert.equal(loads(), 1, 'and never reloaded');
-  assert.equal(floating.stageMin, `${inlineHeight}px`, 'the stage holds its height');
+  assert.equal(floating.stageMin, `${inlineHeight}px`, "the stage holds the player's height while it floats");
   assert.ok(floating.videoH >= 200, `floating video is at least 200px tall (got ${floating.videoH})`);
   assert.ok(floating.bottomGap >= 10 && floating.rightGap >= 10);
   assert.equal(floating.dockClass, true);
-  assert.equal(floating.windowVisible, 'flex', 'expand/close show while floating');
+  assert.deepEqual(floating.hidden, ['none', 'none', 'none', 'none'], 'floating keeps only title, meta, play and progress');
+  assert.notEqual(floating.progress, 'none');
+  assert.equal(floating.titleRole, 'button', 'the title is the way back to the page');
   assert.ok((await state(page)).playing, 'still playing through the transition');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline');
-  assert.equal(await page.$eval('.video-embed', (s) => s.style.minHeight), '');
+  assert.equal(await page.$eval('.video-embed', (s) => s.style.height), `${inlineHeight}px`);
+  await ctx.close();
+});
+
+test('while the player is active, links swap the page in place and playback carries on', async () => {
+  const { page, ctx, errors, loads } = await open();
+  // Not active yet: a link is a normal navigation (the whole document reloads).
+  await Promise.all([page.waitForNavigation(), clickLink(page, '[data-test="content-other"]')]);
+  assert.equal(await page.evaluate(() => document.querySelector('h1').textContent), 'Other page');
+  assert.equal(await page.evaluate(() => window.__sitewideRan), 1, 'a fresh document');
+  await page.goBack();
+  await page.waitForFunction(() => window.ctkPlayer && ctkPlayer.ready);
+  const loadsBefore = loads(); // the full reload above loaded the iframe once more
+  await page.evaluate(() => { document.querySelector('iframe').__token = 'same'; });
+  await page.click('[data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  await page.evaluate(() => { __yt.t = 300; });
+  // Active: the same link now swaps content, and the video keeps playing in the dock.
+  await clickLink(page, '[data-test="content-other"]');
+  await page.waitForFunction(() => document.querySelector('h1') && document.querySelector('h1').textContent === 'Other page');
+  const after = await page.evaluate(() => ({
+    url: location.pathname, title: document.title, bodyClass: document.body.className, wfPage: document.documentElement.getAttribute('data-wf-page'),
+    sitewide: window.__sitewideRan, otherRan: window.__otherRan, pageCode: window.__otherPageCode, calls: window.__calls,
+    playing: ctkPlayer.isPlaying(), time: ctkPlayer.getTime(), presentation: ctkPlayer.getPresentation(),
+    token: document.querySelector('iframe') && document.querySelector('iframe').__token,
+    navbars: document.querySelectorAll('nav.navbar').length, footers: document.querySelectorAll('footer').length, roots: document.querySelectorAll('[data-player="root"]').length,
+    current: document.querySelector('a.w--current') && document.querySelector('a.w--current').getAttribute('href'),
+    headStyle: !!Array.from(document.querySelectorAll('style')).find((s) => /page-level head style/.test(s.textContent)),
+    focus: document.activeElement && document.activeElement.tagName, scrollY: window.scrollY,
+  }));
+  assert.equal(after.url, '/other/page');
+  assert.equal(after.title, 'Other | Christ the King Church');
+  assert.equal(after.bodyClass, 'body');
+  assert.equal(after.wfPage, 'PAGE_OTHER');
+  assert.equal(after.sitewide, 1, 'site-wide footer code did not run again');
+  assert.equal(after.otherRan, 1, "the new page's inline content script ran");
+  assert.equal(after.pageCode, 1, "the new page's own body-level code ran");
+  assert.deepEqual(after.calls, ['wf:destroy', 'wf:ready', 'ix2:init', 'fs:list:restart'], 'Webflow and Finsweet re-initialised');
+  assert.equal(after.playing, true, 'still playing');
+  assert.ok(after.time >= 300, `time kept (${after.time})`);
+  assert.equal(after.presentation, 'floating');
+  assert.equal(after.token, 'same', 'same iframe element');
+  assert.equal(loads(), loadsBefore, 'never reloaded');
+  assert.equal(after.navbars, 1); assert.equal(after.footers, 1); assert.equal(after.roots, 1);
+  assert.equal(after.current, '/other/page');
+  assert.equal(after.headStyle, true);
+  assert.equal(after.focus, 'H1');
+  assert.equal(after.scrollY, 0);
+  // Back to the sermon page: the player re-anchors inline over the new stage, still playing.
+  await clickLink(page, '[data-test="content-sermon"]');
+  await page.waitForFunction(() => location.pathname === '/sermon/love-the-standard' && ctkPlayer.getPresentation() === 'inline');
+  const back = await page.evaluate(() => ({ playing: ctkPlayer.isPlaying(), token: document.querySelector('iframe').__token, iframes: document.querySelectorAll('iframe').length,
+    stageH: document.querySelector('.video-embed').style.height, transcriptPlaying: document.querySelector('[data-transcript-play]').hasAttribute('data-playing') }));
+  assert.equal(back.playing, true);
+  assert.equal(back.token, 'same');
+  assert.equal(back.iframes, 1);
+  assert.match(back.stageH, /^\d+px$/);
+  assert.equal(back.transcriptPlaying, true, "the new page's transcript embed attached to the live player");
+  assert.equal(loads(), loadsBefore);
+  // History works: back goes to the other page without unloading.
+  await page.goBack();
+  await page.waitForFunction(() => location.pathname === '/other/page' && document.querySelector('h1').textContent === 'Other page');
+  assert.equal(await page.evaluate(() => ctkPlayer.isPlaying() && window.__sitewideRan === 1), true);
+  // Links the browser must keep: hash, file, external, modifier-click.
+  await page.goBack();
+  await page.waitForFunction(() => location.pathname === '/sermon/love-the-standard');
+  await clickLink(page, '[data-test="hash"]');
+  assert.equal(await page.evaluate(() => location.hash), '#notes');
+  assert.equal(await page.evaluate(() => window.__sitewideRan), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('navigating to a different sermon loads it into the player, paused', async () => {
+  const { page, ctx } = await open();
+  await page.click('[data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  await clickLink(page, '[data-test="content-another"]');
+  await page.waitForFunction(() => location.pathname === '/sermon/another' && ctkPlayer.hasVideo && !ctkPlayer.hasAudio);
+  const s = await page.evaluate(() => ({ src: document.querySelector('iframe').src, status: ctkPlayer.getStatus(), modeBtn: !!document.querySelector('[data-player="mode"]'), iframes: document.querySelectorAll('iframe').length,
+    saved: JSON.parse(localStorage.getItem('ctk-player:positions'))['love-the-standard'] }));
+  assert.match(s.src, /embed\/zzzzzzzzzzz/);
+  assert.equal(s.status, 'idle');
+  assert.equal(s.modeBtn, false, 'the new sermon is video-only');
+  assert.equal(s.iframes, 1);
+  assert.ok(s.saved && s.saved.t >= 0, "the previous sermon's position was saved");
+  await ctx.close();
+});
+
+test('closing the player restores ordinary navigation', async () => {
+  const { page, ctx } = await open();
+  await page.click('[data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  await page.evaluate(() => ctkPlayer.close());
+  await Promise.all([page.waitForNavigation(), clickLink(page, '[data-test="content-other"]')]);
+  assert.equal(await page.evaluate(() => window.__sitewideRan), 1, 'a fresh document loaded');
   await ctx.close();
 });
 
@@ -205,9 +318,15 @@ test('on a phone the floating video is a full-width strip that still clears 200p
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating');
   await page.waitForFunction(() => !document.querySelector('[data-player="root"]').hasAttribute('data-animate'));
   const box = await page.$eval('.media-player_video', (v) => v.getBoundingClientRect().toJSON());
-  assert.ok(box.width >= 355 && box.height >= 200, `video ${box.width}x${box.height} must clear YouTube's 200px minimum`);
+  assert.ok(box.width >= 355 && box.height >= 200, `video ${box.width}x${box.height} must clear YouTube's 200px minimum while it plays`);
   const dock = await page.$eval('[data-player="root"]', (r) => r.getBoundingClientRect().toJSON());
-  assert.ok(dock.left <= 1 && dock.right >= 389 && dock.bottom >= 843, `edge-to-edge at the bottom (${JSON.stringify(dock)})`);
+  assert.ok(dock.left <= 9 && dock.right >= 381 && dock.bottom >= 835, `across the bottom (${JSON.stringify(dock)})`);
+  // Pause: the video strip collapses and only the bar remains.
+  await page.click('[data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.getStatus() === 'paused');
+  assert.equal(await page.$eval('.media-player_video', (v) => getComputedStyle(v).display), 'none');
+  const barOnly = await page.$eval('[data-player="root"]', (r) => r.getBoundingClientRect().height);
+  assert.ok(barOnly < 120, `bar alone is compact (${barOnly}px)`);
   await ctx.close();
 });
 
@@ -289,7 +408,7 @@ test('close pauses and hides the dock; coming back to the stage shows the player
   await page.waitForFunction(() => ctkPlayer.isPlaying());
   await page.evaluate(() => window.scrollTo(0, 2000));
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating');
-  await page.focus('[data-player="close"]');
+  await page.focus('[data-player="play"]');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'hidden');
   let s = await state(page);
@@ -300,6 +419,54 @@ test('close pauses and hides the dock; coming back to the stage shows the player
   await page.waitForTimeout(150);
   assert.equal((await state(page)).presentation, 'hidden', 'stays dismissed while scrolled away');
   await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline');
+  await ctx.close();
+});
+
+test('the progress edge seeks by pointer and keyboard, and the time reads along the meta line', async () => {
+  const { page, ctx } = await open();
+  await page.click('[data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  const track = await page.$('[data-player="progress"]');
+  const box = await track.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+  let s = await state(page);
+  assert.ok(Math.abs(s.yt.seeks[s.yt.seeks.length - 1] - 1800) < 40, `clicked halfway → ~1800s (${s.yt.seeks})`);
+  await page.focus('[data-player="progress"]');
+  await page.keyboard.press('ArrowRight');
+  s = await state(page);
+  assert.ok(Math.abs(s.yt.seeks[s.yt.seeks.length - 1] - 1805) < 40, `arrow → +5s (${s.yt.seeks})`);
+  assert.match(await page.$eval('[data-player="time"]', (e) => e.textContent), /^30:0\d \/ 1:00:00$/);
+  assert.equal(await page.$eval('[data-player="speaker"]', (e) => e.textContent), 'Doug Wilson');
+  assert.match(await page.$eval('[data-player="progress"]', (e) => e.style.getPropertyValue('--player-progress')), /^50\.\d+%$/);
+  await ctx.close();
+});
+
+test('with the transcript sheet open the bar floats above it and pushes Synchronize up', async () => {
+  const { page, ctx } = await open('/sermon/love-the-standard', { viewport: { width: 390, height: 844 } });
+  await page.click('[data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  // The stage is in view, so the player is inline — until narthex opens the sheet.
+  assert.equal((await state(page)).presentation, 'inline');
+  await page.evaluate(() => {
+    document.querySelector('.media-transcript').classList.add('is-visible');
+    document.dispatchEvent(new CustomEvent('vci:modal:open', { bubbles: true, detail: { key: 'transcript' } }));
+  });
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating');
+  const over = await page.evaluate(() => {
+    const r = document.querySelector('[data-player="root"]');
+    return { z: getComputedStyle(r).zIndex, attr: r.hasAttribute('data-over-sheet'),
+      dock: getComputedStyle(document.documentElement).getPropertyValue('--player-dock-height').trim(),
+      sync: getComputedStyle(document.querySelector('[data-transcript-sync]')).bottom };
+  });
+  assert.equal(over.z, '1002', 'above the sheet (1001)');
+  assert.equal(over.attr, true);
+  assert.match(over.dock, /^\d+px$/);
+  assert.ok(parseFloat(over.sync) >= parseFloat(over.dock) + 16, `Synchronize sits above the bar (${over.sync} vs dock ${over.dock})`);
+  await page.evaluate(() => {
+    document.querySelector('.media-transcript').classList.remove('is-visible');
+    document.dispatchEvent(new CustomEvent('vci:modal:close', { bubbles: true, detail: { key: 'transcript' } }));
+  });
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline');
   await ctx.close();
 });
