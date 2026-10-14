@@ -208,45 +208,60 @@ Untouched and still registered scripts: `LivestreamResolver`,
 `<audio>`. On the Media Template the video sits in the page as it always did,
 with nothing under it; a **Listen** icon button joins the "Listen on"
 Spotify / Apple row (first in the row; a labelled button after the stage on a
-page without that row). Only while a sermon is playing does a bar appear,
-fixed to the bottom of the screen: a gold scrubbable progress edge along its
-top, then title, speaker and time on the meta line (the series-playlist row
-styles), Listen/Watch and play/pause. Pausing hides it; the title goes back
-to the sermon page. A YouTube video that is playing while its stage has
-scrolled away rides above the bar at a legal size (YouTube's policy forbids
-hiding a playing player); in Listen mode, or paused, there is no video on
-screen. Full contract in the file's header comment; the design reasoning is
-in [`docs/persistent-player-discovery.md`](../docs/persistent-player-discovery.md).
+page without that row). From the first play until it is closed, a floating
+card like the Beliefs pages' section selector (2px border, small radius, card
+surface, the back-to-top button's shadow) sits bottom-right on desktop and
+across the bottom, inset from the edges, on phones: a gold scrubbable progress
+edge along its top, title, speaker and time on the meta line (the
+series-playlist row styles), Listen/Watch, a gold play/pause styled like the
+back-to-top button, and close. The title goes back to the sermon page.
+
+**No video ever leaves the stage.** A playing YouTube video may not be hidden
+(its policy) and stops when the page is hidden anyway, so whenever the video
+leaves the screen — scrolled away, a link clicked, the transcript sheet opened
+over it, the tab switched, the app left, the phone locked — the audio takes
+over at the same position when the sermon has any. A sermon with no audio
+pauses instead and the bar says so; play on the bar brings you back to the
+video, and scrolling back resumes it. Scrolling back while listening shows
+the paused video again; Watch on the bar switches back to it on screen.
+
+**Leaving the browser (experimental).** The hand-over on tab switch, app
+switch and lock relies on the browser letting a hidden page start the MP3.
+iOS only allows that for an `<audio>` element that was once played inside a
+real user gesture, so the first tap, touch or key on the page plays it muted
+for an instant (the unlock; a tap on YouTube's own play button inside the
+iframe does not count), and while the video plays the paused audio is kept
+cued near the video's position. If the audio cannot start, the video is
+paused and the bar says so on return — nothing restarts on its own. On by
+default; `ctkPlayer.setHandoff(false)` turns it off (remembered). Every
+attempt is logged to `localStorage` under `ctk-player:handoff-log`
+(`ctkPlayer.handoffLog()` in the console) so it can be judged on real phones.
 
 **Playback carries across pages.** A normal link unloads the document and the
-audio with it, so while the player is active (started and not closed) the
-script handles same-site links itself: it fetches the next page and swaps its
+audio with it, so while the bar is up and the audio can carry on, the script
+handles same-site links itself: it fetches the next page and swaps its
 content in place. The announcement bar, navbar and footer stay (they are the
 same on every page), the sections between them are replaced, the new page's
 own scripts run, and Webflow (`destroy`/`ready`/IX2), Finsweet Attributes
 (`modules.*.restart()`) and narthex (`accordion.init()`, `nav.measure()`) are
 told about the new content. The player root is a child of `<body>`, outside
 the swapped content, so the YouTube iframe and the audio are never touched.
-Back/forward work the same way. Pausing (the bar goes away) restores ordinary
-navigation; modifier-clicks, new-tab links, hashes, downloads and files are
-always left to the browser; `data-player-nav="off"` on a link or an ancestor
-opts it out. Arriving on another sermon page loads that sermon into the
-player, paused, and remembers where the previous one was.
+Back/forward work the same way. Closing the bar restores ordinary navigation;
+modifier-clicks, new-tab links, hashes, downloads and files are always left
+to the browser; `data-player-nav="off"` on a link or an ancestor opts it out.
+Arriving on another sermon page loads that sermon into the player, paused,
+and remembers where the previous one was. A video-only sermon cannot travel.
 
 What else it does: Listen ⇄ Watch switching that keeps the position and
 speed (the MP3 starts muted at the video's time, then YouTube pauses); ±15 s
 and speed through the API and the lock screen (no buttons for them on the
 bar); lock-screen metadata and controls in Listen mode through the Media
-Session API; the last position per sermon and the preferred mode and
-speed remembered in `localStorage`; Watch-only and Listen-only sermons;
-loading and error states that fall back to the other source and never restart
-the sermon. On a phone with the transcript sheet open, the bar floats above
-the sheet and the sheet's Synchronize button and bottom padding move up by the
+Session API; the last position per sermon and the preferred mode and speed
+remembered in `localStorage`; Watch-only and Listen-only sermons; loading and
+error states that fall back to the other source and never restart the
+sermon. On a phone with the transcript sheet open, the bar floats above the
+sheet and the sheet's Synchronize button and bottom padding move up by the
 bar's height.
-
-What it does not do, by design: play YouTube hidden or in the background,
-draw anything over the YouTube player, or shrink it below 200×200px — all
-three are YouTube API policy.
 
 ### Designer side
 
@@ -279,7 +294,8 @@ https://cdn.jsdelivr.net/gh/volentecreative/christtheking@<commit>/webflow/regis
 
 Registered 2026-10-14 as `mediaPlayer` 1.0.0 (commit `c87209a`) and applied
 to the site footer through the Data API; 1.1.0 the same day (bar redesign,
-cross-page playback); 1.2.0 (bottom bar only while playing, Listen button). To ship a change: commit it, then
+cross-page playback); 1.2.0 (bottom bar only while playing, Listen button);
+1.3.0 (floating card, no video off-screen, hand-off on leaving the browser). To ship a change: commit it, then
 re-register with the new commit's URL and hash and bump the version:
 
 ```sh
@@ -296,7 +312,7 @@ pinned commit never changes, so the hash never goes stale; `@main` would.
 (video timeline, so `#t=` anchors work in both modes), `getDuration()`,
 `isPlaying()`, `play()`, `pause()`, `toggle()`, `seek(s, { play })`,
 `skip(±s)`, `setMode('watch' | 'listen')`, `setRate(r)`, `expand()`, `close()`,
-`on(event, fn)`. Events on `document`: `ctk:player:ready`, `play`, `pause`,
+`setHandoff(bool)`, `getHandoff()`, `handoffLog()`, `on(event, fn)`. Events on `document`: `ctk:player:ready`, `play`, `pause`,
 `ended`, `time`, `mode`, `float`, `inline`, `hidden`, `error`, `navigate`. The
 transcript embed is the first consumer.
 
@@ -308,8 +324,10 @@ keeps time, the MP3 is a generated silent WAV, and the transcript embed is
 loaded from its source file, with stand-ins for Webflow and Finsweet. It
 covers inline → floating → inline without an iframe reload, the phone strip's
 200px minimum, Watch ⇄ Listen position and speed, paused switching, a 404 MP3
-falling back to video, ±15 and speed, scrubbing, the transcript sheet, close
-and dismissal, resume on the next visit, in-place navigation (playback and
+falling back to video, ±15 and speed, scrubbing, the transcript sheet, the
+scroll-away and hidden-page hand-overs, a video-only sermon pausing away and
+resuming back, close and dismissal, resume on the next visit, in-place
+navigation (playback and
 the iframe survive, the new page's scripts run, Webflow and Finsweet are
 re-initialised, back/forward, hash and file links left alone, a different
 sermon loading, ordinary navigation once closed), the embed following the

@@ -162,17 +162,24 @@ test('renders the video over the stage, no bar until something plays, a Listen b
   await ctx.close();
 });
 
-test('the bar appears while playing and goes away when paused', async () => {
+test('the bar appears on play, stays while paused, and goes away when closed', async () => {
   const { page, ctx } = await open();
   await play(page);
   await page.waitForFunction(() => ctkPlayer.isPlaying());
   await barSettled(page);
-  const on = await page.evaluate(() => { const b = document.querySelector('[data-player="bar"]').getBoundingClientRect(); return { bottom: innerHeight - b.bottom, left: b.left, right: innerWidth - b.right, dock: getComputedStyle(document.documentElement).getPropertyValue('--player-dock-height').trim(), body: document.body.classList.contains('has-player-dock') }; });
-  assert.ok(on.bottom < 1 && on.left < 1 && on.right < 1, `full-width at the bottom ${JSON.stringify(on)}`);
+  const on = await page.evaluate(() => { const el = document.querySelector('[data-player="bar"]'); const b = el.getBoundingClientRect(), cs = getComputedStyle(el); return { bottom: innerHeight - b.bottom, left: b.left, right: innerWidth - b.right, width: b.width, border: cs.borderTopWidth + ' ' + cs.borderTopStyle, radius: cs.borderTopLeftRadius, dock: getComputedStyle(document.documentElement).getPropertyValue('--player-dock-height').trim(), body: document.body.classList.contains('has-player-dock') }; });
+  assert.ok(on.bottom >= 16 && on.right >= 16 && on.left > 16 && on.width <= 420, `a floating card in the corner, inset from the edges ${JSON.stringify(on)}`);
+  assert.equal(on.border, '2px solid'); assert.equal(on.radius, '8px');
   assert.match(on.dock, /^\d+px$/); assert.equal(on.body, true);
   assert.equal(await page.$eval('[data-player="speaker"]', (e) => e.textContent), 'Doug Wilson');
   await page.click('.media-player_bar [data-player="play"]');
   await page.waitForFunction(() => ctkPlayer.getStatus() === 'paused');
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('[data-player="bar"]')).visibility), 'visible', 'paused keeps the bar');
+  assert.equal(await page.$eval('.media-player_bar [data-player="play"]', (b) => b.getAttribute('aria-label')), 'Play');
+  const playBtn = await page.$eval('.media-player_bar [data-player="play"]', (b) => { const cs = getComputedStyle(b); return { w: b.offsetWidth, h: b.offsetHeight, radius: cs.borderTopLeftRadius, border: cs.borderTopWidth, shadow: cs.boxShadow !== 'none' }; });
+  assert.equal(playBtn.w, 44); assert.equal(playBtn.h, 44); assert.equal(playBtn.border, '2px'); assert.equal(playBtn.shadow, true, 'styled like the back-to-top button');
+  await page.click('.media-player_bar [data-player="close"]');
   await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-player="bar"]')).visibility === 'hidden');
   assert.equal(await page.evaluate(() => document.body.classList.contains('has-player-dock')), false);
   assert.equal(await page.evaluate(() => document.querySelector('.media-player_video').getBoundingClientRect().height > 100), true, 'the video stays in the page');
@@ -212,7 +219,7 @@ test('the Listen button starts the audio, and switches a playing video to audio 
   await ctx.close();
 });
 
-test('a playing video that scrolls away rides above the bar, same iframe, and comes back', async () => {
+test('scrolling a playing video away hands over to the audio; scrolling back shows the (paused) video again', async () => {
   const { page, ctx, loads } = await open();
   await page.evaluate(() => { document.querySelector('iframe').__token = 'same'; });
   await page.evaluate(() => window.scrollTo(0, 2000));
@@ -221,35 +228,46 @@ test('a playing video that scrolls away rides above the bar, same iframe, and co
   await page.evaluate(() => window.scrollTo(0, 0));
   await play(page);
   await page.waitForFunction(() => ctkPlayer.isPlaying());
+  await page.evaluate(() => { __yt.t = 120; });
   const stageHeight = await page.$eval('.video-embed', (s) => s.style.height);
   await page.evaluate(() => window.scrollTo(0, 2000));
-  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating');
-  await barSettled(page);
-  const floating = await page.evaluate(() => {
-    const v = document.querySelector('.media-player_video'), b = document.querySelector('[data-player="bar"]');
-    const vb = v.getBoundingClientRect(), bb = b.getBoundingClientRect();
-    return { position: getComputedStyle(v).position, z: getComputedStyle(v).zIndex, display: getComputedStyle(v).display, token: document.querySelector('iframe').__token,
-      stageH: document.querySelector('.video-embed').style.height, aboveBar: bb.top - vb.bottom, rightGap: innerWidth - vb.right, videoH: vb.height, videoW: vb.width };
-  });
-  assert.equal(floating.position, 'fixed');
-  assert.equal(floating.display, 'block', 'a playing YouTube video stays on screen');
-  assert.equal(floating.z, '95');
-  assert.equal(floating.token, 'same', 'the iframe element was not replaced');
-  assert.equal(loads(), 1, 'and never reloaded');
-  assert.equal(floating.stageH, stageHeight, 'the stage holds its height');
-  assert.ok(floating.videoH >= 200, `at least 200px tall (got ${floating.videoH})`);
-  assert.ok(floating.aboveBar >= 8 && floating.aboveBar < 24, `sits just above the bar (${floating.aboveBar})`);
-  assert.ok(floating.rightGap >= 10);
-  assert.ok((await state(page)).playing, 'still playing through the transition');
-  // Pause while floating: both the strip and the bar go away.
-  await page.evaluate(() => ctkPlayer.pause());
-  await page.waitForFunction(() => ctkPlayer.getStatus() === 'paused');
-  assert.equal(await page.$eval('.media-player_video', (v) => getComputedStyle(v).display), 'none');
-  await page.evaluate(() => ctkPlayer.play());
-  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating' && ctkPlayer.getMode() === 'listen' && ctkPlayer.getStatus() === 'playing');
+  const away = await page.evaluate(() => ({ video: getComputedStyle(document.querySelector('.media-player_video')).display, yt: __yt.state, time: ctkPlayer.getTime(), token: document.querySelector('iframe').__token,
+    stageH: document.querySelector('.video-embed').style.height, bar: getComputedStyle(document.querySelector('[data-player="bar"]')).visibility }));
+  assert.equal(away.video, 'none', 'no video off-screen');
+  assert.equal(away.yt, 2, 'YouTube paused');
+  assert.ok(Math.abs(away.time - 120) < 3, `audio took over at the same place (${away.time})`);
+  assert.equal(away.token, 'same'); assert.equal(loads(), 1);
+  assert.equal(away.stageH, stageHeight); assert.equal(away.bar, 'visible');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline');
-  assert.equal(await page.$eval('.video-embed', (s) => s.style.height), stageHeight);
+  const back = await page.evaluate(() => ({ video: getComputedStyle(document.querySelector('.media-player_video')).display, mode: ctkPlayer.getMode(), playing: ctkPlayer.isPlaying() }));
+  assert.deepEqual(back, { video: 'block', mode: 'listen', playing: true }, 'still listening; the paused video is back in the page');
+  await ctx.close();
+});
+
+test('a video-only sermon pauses when it scrolls away, keeps the bar, and resumes when scrolled back', async () => {
+  const { page, ctx } = await open('/sermon/x?audio=');
+  await play(page);
+  await page.waitForFunction(() => ctkPlayer.isPlaying());
+  await page.evaluate(() => window.scrollTo(0, 2000));
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating' && ctkPlayer.getStatus() === 'paused');
+  const away = await page.evaluate(() => ({ bar: document.querySelector('[data-player="root"]').getAttribute('data-bar'), msg: document.querySelector('[data-player="status"]').textContent, video: getComputedStyle(document.querySelector('.media-player_video')).display }));
+  assert.equal(away.bar, 'on', 'the bar stays to bring you back');
+  assert.match(away.msg, /Paused/);
+  assert.equal(away.video, 'none');
+  // Play from the bar: it goes back to the video and plays there.
+  await page.click('.media-player_bar [data-player="play"]');
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline' && ctkPlayer.isPlaying());
+  await page.evaluate(() => window.scrollTo(0, 2000));
+  await page.waitForFunction(() => ctkPlayer.getStatus() === 'paused');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline' && ctkPlayer.isPlaying(), null, { timeout: 5000 });
+  // And a link while it is paused away is an ordinary navigation (video cannot travel).
+  await page.evaluate(() => window.scrollTo(0, 2000));
+  await page.waitForFunction(() => ctkPlayer.getStatus() === 'paused');
+  await Promise.all([page.waitForNavigation(), clickLink(page, '[data-test="content-other"]')]);
+  assert.equal(await page.evaluate(() => window.__sitewideRan), 1);
   await ctx.close();
 });
 
@@ -265,7 +283,7 @@ test('while the player is active, links swap the page in place and playback carr
   await page.evaluate(() => { document.querySelector('iframe').__token = 'same'; });
   await play(page);
   await page.waitForFunction(() => ctkPlayer.isPlaying());
-  await page.evaluate(() => { __yt.t = 300; });
+  await page.evaluate(() => { __yt.t = 120; });
   // Active: the same link now swaps content, and the video keeps playing above the bar.
   await clickLink(page, '[data-test="content-other"]');
   await page.waitForFunction(() => document.querySelector('h1') && document.querySelector('h1').textContent === 'Other page');
@@ -282,14 +300,16 @@ test('while the player is active, links swap the page in place and playback carr
   }));
   assert.equal(after.url, '/other/page');
   assert.equal(after.title, 'Other | Christ the King Church');
-  assert.equal(after.bodyClass, 'body');
+  assert.ok(/\bbody\b/.test(after.bodyClass) && /has-player-dock/.test(after.bodyClass), `new page's body class, plus the dock (${after.bodyClass})`);
   assert.equal(after.wfPage, 'PAGE_OTHER');
   assert.equal(after.sitewide, 1, 'site-wide footer code did not run again');
   assert.equal(after.otherRan, 1, "the new page's inline content script ran");
   assert.equal(after.pageCode, 1, "the new page's own body-level code ran");
   assert.deepEqual(after.calls, ['wf:destroy', 'wf:ready', 'ix2:init', 'fs:list:restart'], 'Webflow and Finsweet re-initialised');
   assert.equal(after.playing, true, 'still playing');
-  assert.ok(after.time >= 300, `time kept (${after.time})`);
+  assert.ok(after.time >= 119, `time kept (${after.time})`);
+  assert.equal(await page.evaluate(() => ctkPlayer.getMode()), 'listen', 'the audio took over for the trip');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.media-player_video')).display), 'none', 'no video away from the page');
   assert.equal(after.presentation, 'floating');
   assert.equal(after.barVisible, 'visible');
   assert.equal(after.listenButtons, 0, 'no Listen button on a page without the row');
@@ -300,9 +320,10 @@ test('while the player is active, links swap the page in place and playback carr
   assert.equal(after.headStyle, true);
   assert.equal(after.focus, 'H1');
   assert.equal(after.scrollY, 0);
-  // The bar's title takes you back to the sermon page; the video re-anchors inline, still playing.
+  // The bar's title takes you back to the sermon page; the video re-anchors inline, audio still playing.
   await page.click('.media-player_bar [data-player="info"]');
   await page.waitForFunction(() => location.pathname === '/sermon/love-the-standard' && ctkPlayer.getPresentation() === 'inline');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.media-player_video')).display === 'block');
   const back = await page.evaluate(() => ({ playing: ctkPlayer.isPlaying(), token: document.querySelector('iframe').__token, iframes: document.querySelectorAll('iframe').length,
     stageH: document.querySelector('.video-embed').style.height, transcriptPlaying: document.querySelector('[data-transcript-play]').hasAttribute('data-playing'),
     listenButtons: document.querySelectorAll('[data-player="listen"]').length }));
@@ -355,17 +376,17 @@ test('pausing restores ordinary navigation', async () => {
   await ctx.close();
 });
 
-test('on a phone the floating video strip still clears 200px and the bar spans the bottom', async () => {
+test('on a phone the bar is an inset floating card and nothing else is on screen', async () => {
   const { page, ctx } = await open('/sermon/love-the-standard', { viewport: { width: 390, height: 844 } });
   await play(page);
   await page.waitForFunction(() => ctkPlayer.isPlaying());
   await page.evaluate(() => window.scrollTo(0, 2500));
-  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating');
+  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating' && ctkPlayer.getMode() === 'listen');
   await barSettled(page);
-  const box = await page.$eval('.media-player_video', (v) => v.getBoundingClientRect().toJSON());
-  assert.ok(box.width >= 355 && box.height >= 200, `video ${box.width}x${box.height} must clear YouTube's 200px minimum while it plays`);
-  const bar = await page.$eval('[data-player="bar"]', (b) => b.getBoundingClientRect().toJSON());
-  assert.ok(bar.left <= 1 && bar.right >= 389 && bar.bottom >= 843 && bar.top > box.bottom, `bar across the bottom under the strip (${JSON.stringify(bar)})`);
+  const bar = await page.$eval('[data-player="bar"]', (b) => { const r = b.getBoundingClientRect(), cs = getComputedStyle(b); return { left: r.left, right: innerWidth - r.right, bottom: innerHeight - r.bottom, border: cs.borderLeftWidth, radius: cs.borderTopLeftRadius }; });
+  assert.ok(bar.left >= 12 && bar.right >= 12 && bar.bottom >= 12, `inset from the edges ${JSON.stringify(bar)}`);
+  assert.equal(bar.border, '2px'); assert.equal(bar.radius, '8px');
+  assert.equal(await page.$eval('.media-player_video', (v) => getComputedStyle(v).display), 'none');
   await ctx.close();
 });
 
@@ -462,7 +483,7 @@ test('with the transcript sheet open the bar sits above it and pushes Synchroniz
     document.querySelector('.media-transcript').classList.add('is-visible');
     document.dispatchEvent(new CustomEvent('vci:modal:open', { bubbles: true, detail: { key: 'transcript' } }));
   });
-  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'floating');
+  await page.waitForFunction(() => ctkPlayer.getMode() === 'listen' && ctkPlayer.getStatus() === 'playing');
   const over = await page.evaluate(() => {
     const r = document.querySelector('[data-player="root"]');
     return { z: getComputedStyle(r.querySelector('[data-player="bar"]')).zIndex, attr: r.hasAttribute('data-over-sheet'),
@@ -477,7 +498,46 @@ test('with the transcript sheet open the bar sits above it and pushes Synchroniz
     document.querySelector('.media-transcript').classList.remove('is-visible');
     document.dispatchEvent(new CustomEvent('vci:modal:close', { bubbles: true, detail: { key: 'transcript' } }));
   });
-  await page.waitForFunction(() => ctkPlayer.getPresentation() === 'inline');
+  await page.waitForFunction(() => !document.querySelector('[data-player="root"]').hasAttribute('data-over-sheet'));
+  await ctx.close();
+});
+
+test('hiding the page while a video plays hands over to the audio at the same place, and logs it', async () => {
+  const { page, ctx } = await open();
+  // The first touch unlocks the audio element (a muted instant of play), without starting anything.
+  await page.mouse.click(5, 300);
+  await page.waitForFunction(() => (ctkPlayer.handoffLog() || []).some((e) => e.what === 'unlocked'));
+  assert.equal((await state(page)).status, 'idle', 'the unlock did not start playback');
+  await play(page);
+  await page.waitForFunction(() => ctkPlayer.isPlaying() && ctkPlayer.getMode() === 'watch');
+  await page.evaluate(() => { __yt.t = 90; });
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForFunction(() => ctkPlayer.getMode() === 'listen' && ctkPlayer.getStatus() === 'playing');
+  const s = await state(page);
+  assert.ok(Math.abs(s.time - 90) < 3, `audio continues from the video's position (${s.time})`);
+  assert.equal(s.yt.state, 2, 'the video is paused');
+  const log = await page.evaluate(() => ctkPlayer.handoffLog().map((e) => e.what));
+  assert.ok(log.includes('hidden, handing over') && log[log.length - 1] === 'audio playing', `logged: ${log}`);
+  // Back: still listening, nothing restarted.
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(300);
+  assert.equal((await state(page)).mode, 'listen');
+  // Turned off, hiding does nothing to a playing video.
+  await page.evaluate(() => { ctkPlayer.setHandoff(false); ctkPlayer.setMode('watch'); });
+  await page.waitForFunction(() => ctkPlayer.getMode() === 'watch' && ctkPlayer.isPlaying());
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(300);
+  assert.equal((await state(page)).mode, 'watch');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('ctk-player:prefs')).handoff), false);
   await ctx.close();
 });
 
@@ -508,7 +568,8 @@ test('the transcript embed follows the shared player: rows seek it, its play but
   await page.click('.media-secondary [data-t-row]:nth-of-type(3)');
   await page.waitForFunction(() => ctkPlayer.getTime() >= 120);
   await page.waitForFunction(() => document.querySelector('.media-secondary [data-t-row]:nth-of-type(3)').hasAttribute('data-t-active'));
-  await page.click('.media-player_bar [data-player="mode"]');
+  // Reaching the transcript scrolled the stage away, so the audio has already taken over; otherwise switch.
+  if (await page.evaluate(() => ctkPlayer.getMode()) !== 'listen') await page.click('.media-player_bar [data-player="mode"]');
   await page.waitForFunction(() => ctkPlayer.getMode() === 'listen' && ctkPlayer.getStatus() === 'playing');
   await page.waitForFunction(() => Math.abs(ctkPlayer.getTime() - 120) < 3);
   assert.ok(await page.$eval('.media-secondary [data-t-row]:nth-of-type(3)', (r) => r.hasAttribute('data-t-active')));

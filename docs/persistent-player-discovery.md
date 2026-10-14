@@ -687,3 +687,11 @@ the video sits in the page as before, a Listen icon joins the "Listen on"
 row, and a bottom bar exists only while a sermon plays (pausing hides it,
 and with it the in-place navigation).
 
+Then, still the same day: the bar became a floating card (no video ever
+leaves the stage; leaving it hands over to audio or pauses), pausing keeps
+the bar and a close control was added, play/pause took the back-to-top
+button's styling, and the §D hand-off shipped as a default-on experiment
+inside the player (unlock on first gesture, audio cued near the video,
+hand-over on visibilitychange, attempts logged to localStorage) rather than
+as a separate proof-of-concept page.
+

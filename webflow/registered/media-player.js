@@ -20,11 +20,13 @@
  *
  * WHAT IT BUILDS (on <body>)
  *   .media-player [data-player="root"] [data-mode] [data-presentation] [data-status] [data-bar]
- *     .media-player_video   the 16:9 box that owns the YouTube iframe for the page's life:
- *                           laid over the stage while it is in view, fixed above the bar
- *                           while a video plays off-screen, hidden otherwise
- *     .media-player_bar     fixed to the bottom while a sermon plays: progress edge · title ·
- *                           speaker · time · Listen/Watch · play/pause. Pausing hides it.
+ *     .media-player_video   the 16:9 box that owns the YouTube iframe for the page's life,
+ *                           laid over the stage while it is in view and hidden otherwise.
+ *                           A video never plays off-screen: scrolling away or leaving the
+ *                           page hands over to the audio, or pauses a sermon without any
+ *     .media-player_bar     a floating card (bottom-right on desktop, across the bottom on
+ *                           phones) from the first play until closed: progress edge · title ·
+ *                           speaker · time · Listen/Watch · play/pause · close
  *   .media-player_listen    a "Listen" icon button added to the page's "Listen on" row
  *   The iframe is never moved in the DOM (moving an iframe reloads it).
  *
@@ -48,7 +50,11 @@
  *         so playback carries on: see the navigation section. data-player-nav="off"
  *         on a link or an ancestor opts it out. Closing the player restores normal
  *         navigation. The root is a child of <body>, outside the swapped content.
- * STORAGE localStorage ctk-player:prefs { mode, rate } · ctk-player:positions { slug: { t, mode, at } }
+ * STORAGE localStorage ctk-player:prefs { mode, rate, handoff } · ctk-player:positions { slug: { t, mode, at } }
+ *         · ctk-player:handoff-log (the last 40 hand-off attempts, for testing on phones)
+ * HAND-OFF  Leaving the browser (tab switch, app switch, lock) while a video plays hands
+ *         over to the audio when the sermon has any: see the hand-off section. Default
+ *         on; ctkPlayer.setHandoff(false) turns it off (remembered).
  */
 (function () {
   'use strict';
@@ -81,7 +87,13 @@
     ratio: 1,                // how much of the stage is on screen
     sheet: false,            // the transcript sheet is open over the page
     anchor: 0,               // the stage's top in document coordinates, last placed
-    href: ''                 // the sermon page this item came from
+    href: '',                // the sermon page this item came from
+    autoPaused: false,       // the video was paused because it left the screen (no audio to hand to)
+    unlocked: false,         // the <audio> has been played once inside a user gesture (iOS needs this)
+    unlocking: false,        // that muted unlock play is in flight
+    handoff: true,           // switch a playing video to audio when the page is hidden
+    autoLeave: false,        // an automatic hand-over to audio is in flight
+    playOnInline: false      // play the video once it is back on screen
   };
   var stage, root, videoBox, bar, iframe, audio = null;
   var yt = null, ytReady = false, ytHoldPause = false, ytDuration = 0;
@@ -144,15 +156,16 @@
       '.media-player_video{position:absolute;z-index:3;aspect-ratio:16/9;border-radius:var(--border-radius-medium);overflow:clip;background:var(--_theme---background-02)}',
       '.media-player_video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
       '.media-player[data-has-video="false"] .media-player_video{display:none}',
-      /* Playing video that has scrolled away rides above the bar at a legal size (YouTube forbids hiding
-         a playing player); in Listen mode or paused there is no video on screen. */
-      '.media-player[data-presentation="floating"] .media-player_video{display:none}',
-      '.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{display:block;position:fixed;z-index:95;right:1rem;bottom:calc(var(--player-dock-height,0px) + .75rem);width:min(24rem,calc(100vw - 2rem));border-radius:var(--border-radius-small);border:2px solid var(--_theme---border-02)}',
-      '.media-player[data-presentation="hidden"] .media-player_video{display:none}',
-      /* The bar: a series-playlist row fixed to the bottom edge, full width, with the progress edge on top. */
-      '.media-player_bar{position:fixed;z-index:95;left:0;right:0;bottom:0;display:flex;align-items:center;gap:.5rem .75rem;padding:.75rem var(--_spacing---gutter,1rem) calc(.5rem + env(safe-area-inset-bottom,0px));border-top:2px solid var(--_theme---border-02);background-color:var(--_theme---background-02);transform:translateY(100%);opacity:0;visibility:hidden;transition:transform 240ms cubic-bezier(.22,1,.36,1),opacity 200ms ease-out,visibility 0s linear 240ms}',
+      /* Away from the stage there is never a video on screen: the bar is all there is. A video
+         cannot keep playing hidden (YouTube policy, and iOS pauses it anyway), so leaving the
+         stage hands over to the audio, or pauses a sermon that has none. */
+      '.media-player[data-presentation="floating"] .media-player_video,.media-player[data-presentation="hidden"] .media-player_video{display:none}',
+      /* The bar: a floating card like the section selector on the Beliefs pages (2px border, small
+         radius, card surface), inset from the edges, with the progress edge along its top. */
+      '.media-player_bar{position:fixed;z-index:95;box-sizing:border-box;left:var(--_spacing---gutter,1rem);right:var(--_spacing---gutter,1rem);bottom:calc(1rem + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:.5rem .75rem;padding:.75rem 1rem .625rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);background-color:var(--_theme---background-02);box-shadow:0 8px 20px -6px #00000080;overflow:hidden;transform:translateY(calc(100% + 1.5rem));opacity:0;visibility:hidden;transition:transform 240ms cubic-bezier(.22,1,.36,1),opacity 200ms ease-out,visibility 0s linear 240ms}',
+      '@media (min-width:992px){.media-player_bar{left:auto;width:26rem;right:1.5rem;bottom:1.5rem}}',
       '.media-player[data-bar="on"] .media-player_bar{transform:none;opacity:1;visibility:visible;transition-delay:0s}',
-      '.media-player[data-over-sheet] .media-player_bar,.media-player[data-over-sheet][data-presentation="floating"] .media-player_video{z-index:1002}',
+      '.media-player[data-over-sheet] .media-player_bar{z-index:1002}',
       '@media (prefers-reduced-motion:reduce){.media-player_bar{transition:none}}',
       '.media-player_info{display:flex;flex-direction:column;flex:1 1 8rem;min-width:0;gap:.4rem;cursor:pointer}',
       '.media-player_info:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px;border-radius:.25rem}',
@@ -163,14 +176,18 @@
       '.media-player_controls{display:flex;align-items:center;gap:.25rem;flex:none}',
       '.media-player_btn{display:inline-flex;align-items:center;justify-content:center;width:2.75rem;height:2.75rem;padding:0;border:0;border-radius:var(--border-radius-small);background:transparent;color:var(--_theme---text-01);cursor:pointer;font:inherit}',
       '.media-player_btn svg{width:1.5rem;height:1.5rem}',
-      '.media-player_btn[data-size="large"]{background-color:var(--_theme---accent-01);color:var(--_theme---background-01);border-radius:100rem}',
-      '.media-player_btn[data-size="large"] svg{width:1.75rem;height:1.75rem}',
+      /* Play/pause is the back-to-top button in gold: 2.75rem, 2px border, round, the same shadow and press. */
+      '.media-player_btn[data-size="large"]{background-color:var(--_theme---accent-01);color:var(--_theme---background-01);border:2px solid var(--_theme---border-02);border-radius:100rem;box-shadow:0 8px 20px -6px #00000080;transition:transform .15s ease,background-color .15s ease}',
+      '.media-player_btn[data-size="large"]:active{transform:scale(.92)}',
+      '.media-player_btn[data-size="large"] svg{width:1.5rem;height:1.5rem}',
       '.media-player_btn[aria-pressed="true"]{color:var(--_theme---accent-01)}',
-      '@media (hover:hover){.media-player_btn:hover{background-color:var(--_theme---background-03)}.media-player_btn[data-size="large"]:hover{background-color:var(--_theme---accent-01);filter:brightness(1.08)}}',
+      '@media (hover:hover){.media-player_btn:hover{background-color:var(--_theme---background-03)}.media-player_btn[data-size="large"]:hover{background-color:var(--_theme---accent-01);filter:brightness(1.06)}}',
       '.media-player_btn:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px}',
       '.media-player_btn[data-on] [data-icon="off"],.media-player_btn:not([data-on]) [data-icon="on"]{display:none}',
+      '.media-player_btn[data-player="close"]{width:2rem;height:2rem;color:var(--_theme---text-02)}',
+      '.media-player_btn[data-player="close"] svg{width:1.25rem;height:1.25rem}',
       /* Progress: a 12px touch strip along the top edge, drawn as a 3px track with a gold fill. */
-      '.media-player_progress{position:absolute;left:0;right:0;top:-2px;height:.75rem;cursor:pointer;touch-action:none}',
+      '.media-player_progress{position:absolute;left:0;right:0;top:0;height:.75rem;cursor:pointer;touch-action:none}',
       '.media-player_progress::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background-color:var(--_theme---border-02)}',
       '.media-player_progress_fill{position:absolute;left:0;top:0;height:3px;width:var(--player-progress,0%);background-color:var(--_theme---accent-01)}',
       '.media-player_progress:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:-2px}',
@@ -180,8 +197,6 @@
       '.media-player_listen[aria-pressed="true"]{color:var(--_theme---accent-01)}',
       '.media-player_listen.is-fallback{display:inline-flex;align-items:center;gap:.5rem;width:auto;padding:.5rem .75rem;margin-top:.75rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);color:var(--_theme---text-01);font-weight:700;text-decoration:none}',
       '.media-player_listen.is-fallback svg{width:1.25rem;height:1.25rem}',
-      '@media (max-width:991px){.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{left:.5rem;right:.5rem;width:auto}}',
-      '@media (max-width:375px){.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{left:0;right:0;border-left:0;border-right:0;border-radius:0}}',
       'html[data-player-navigating] .page-wrapper{cursor:progress}',
       /* Things that share the bottom edge with the bar move up by its height. */
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
@@ -237,6 +252,8 @@
     els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>', { 'data-size': 'large' });
     if (videoId && audioUrl) controls.appendChild(els.mode);
     controls.appendChild(els.play);
+    els.close = button('close', 'Close player', svg(ICON.close));
+    controls.appendChild(els.close);
 
     // Progress edge: a slider for the keyboard, a strip for a finger.
     els.progress = el('div', 'media-player_progress', {
@@ -255,12 +272,13 @@
 
     els.mode.addEventListener('click', function () { api.setMode(S.mode === 'listen' ? 'watch' : 'listen'); });
     els.play.addEventListener('click', function () { api.toggle(); });
+    els.close.addEventListener('click', function () { api.close(); });
     els.info.addEventListener('click', function () { api.expand(); });
     els.info.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.expand(); }
     });
     root.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && S.barShown) { e.preventDefault(); api.pause(); }
+      if (e.key === 'Escape' && S.barShown) { e.preventDefault(); api.close(); }
     });
     scrub();
     paint();
@@ -357,7 +375,7 @@
   function paint() {
     if (!root) return;
     var playing = S.status === 'playing' || S.status === 'loading';
-    S.barShown = playing || !!S.pending;
+    S.barShown = S.userStarted && !S.dismissed && S.status !== 'idle' && S.status !== 'ended';
     root.setAttribute('data-mode', S.mode);
     root.setAttribute('data-status', S.status);
     root.setAttribute('data-presentation', S.presentation);
@@ -426,7 +444,7 @@
     if (keys.length > 50) keys.slice(50).forEach(function (k) { delete all[k]; });
     store(POS_KEY, all);
   }
-  function savePrefs() { store(PREF_KEY, { mode: S.mode, rate: S.rate }); }
+  function savePrefs() { store(PREF_KEY, { mode: S.mode, rate: S.rate, handoff: S.handoff }); }
   function resumePoint() {
     var all = load(POS_KEY) || {};
     var p = all[S.slug];
@@ -484,7 +502,8 @@
           var s = e.data;
           if (s === YT_PLAYING) {
             if (ytHoldPause) { ytHoldPause = false; yt.pauseVideo(); return; }
-            if (started()) {
+            var first = started();
+            if (first) {
               var t = maybeResume();
               if (t) yt.seekTo(t, true);
             }
@@ -529,10 +548,13 @@
     audio.src = audioUrl;
     audio.playbackRate = S.rate;
     audio.addEventListener('playing', function () {
+      if (S.unlocking) { audio.pause(); return; }
       if (S.mode !== 'listen') { audio.pause(); return; }
       started();
       if (S.pending === 'listen') {
         S.pending = null;
+        if (S.autoLeave) logHandoff('audio playing');
+        S.autoLeave = false;
         clearTimeout(switchTimer);
         audio.muted = false;
         if (yt && ytReady) { yt.pauseVideo(); if (yt.unMute) yt.unMute(); }
@@ -542,6 +564,7 @@
       emit('play');
     });
     audio.addEventListener('pause', function () {
+      if (S.unlocking) { S.unlocking = false; S.unlocked = true; audio.muted = false; logHandoff('unlocked'); return; }
       if (S.mode !== 'listen' || S.pending) return;
       setStatus(audio.ended ? 'ended' : 'paused');
       savePosition(true);
@@ -564,6 +587,18 @@
     var wasSwitching = S.pending === 'listen';
     S.pending = null;
     clearTimeout(switchTimer);
+    if (S.autoLeave) {
+      S.autoLeave = false;
+      logHandoff('audio failed: ' + msg);
+      S.mode = videoId ? 'watch' : 'listen';
+      if (yt && ytReady) { if (yt.unMute) yt.unMute(); yt.pauseVideo(); }
+      S.autoPaused = true;
+      say(msg + ' — paused', true);
+      setStatus('paused');
+      emit('mode');
+      emit('error', { source: 'audio' });
+      return;
+    }
     if (videoId) {
       S.mode = 'watch';
       if (yt && ytReady) {
@@ -616,6 +651,63 @@
     } catch (e) { /* out of range */ }
   }
 
+  /* ---------- leaving the browser: video → audio hand-off ----------
+     A YouTube video stops when the tab is hidden or the phone locks, and may not
+     be played in the background anyway. The MP3 can carry on — if the browser
+     lets a hidden page start it. iOS only lets an <audio> element play from code
+     once it has been played inside a real user gesture, so the first tap, touch
+     or key on the page plays it muted for an instant (the "unlock"); while the
+     video plays, the paused audio is kept cued near the video's position so the
+     hand-over has little to fetch. On visibilitychange → hidden a playing video
+     hands over exactly like scrolling away does. If the audio cannot start, the
+     video is paused and the bar says so on return; nothing restarts on its own.
+     Attempts are logged to localStorage (ctkPlayer.handoffLog()) for testing on
+     real phones. */
+  var HANDOFF_LOG = 'ctk-player:handoff-log';
+  function logHandoff(what) {
+    var log = load(HANDOFF_LOG) || [];
+    log.push({ at: new Date().toISOString(), what: what, mode: S.mode, status: S.status, visible: d.visibilityState, slug: S.slug });
+    store(HANDOFF_LOG, log.slice(-40));
+  }
+  function unlockAudio() {
+    if (!audioUrl || S.unlocked || S.unlocking) return;
+    var a = ensureAudio();
+    if (!a || !a.paused) return;
+    S.unlocking = true;
+    a.muted = true;
+    var p = a.play();
+    if (p && p.catch) p.catch(function () { S.unlocking = false; a.muted = false; logHandoff('unlock refused'); });
+  }
+  // A real play from the same gesture takes over the unlock: it is the unlock.
+  function claimAudio() {
+    if (!S.unlocking) return;
+    S.unlocking = false;
+    S.unlocked = true;
+    if (audio) audio.muted = false;
+  }
+  var cueTimer = 0;
+  function cueAudio() {
+    if (!audio || !audioUrl || S.mode !== 'watch' || !ytPlaying() || !audio.paused || S.unlocking) return;
+    if (audio.readyState < 1) return;
+    var t = ytTime() + S.offset;
+    if (Math.abs(audio.currentTime - t) > 10) audio.currentTime = t;
+  }
+  function onHidden() {
+    if (d.visibilityState !== 'hidden') return;
+    savePosition(true);
+    if (!S.handoff || S.mode !== 'watch' || !(S.status === 'playing' || S.status === 'loading')) return;
+    if (!audioUrl) { logHandoff('hidden, no audio'); return; }
+    logHandoff(S.unlocked ? 'hidden, handing over' : 'hidden, handing over (not unlocked)');
+    leaveVideo();
+  }
+  function watchVisibility() {
+    ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) {
+      d.addEventListener(ev, unlockAudio, { capture: true, passive: true });
+    });
+    cueTimer = setInterval(cueAudio, 20000);
+    d.addEventListener('visibilitychange', onHidden);
+  }
+
   /* ---------- presentation ---------- */
   // Inline = the root laid over the stage in document coordinates (it scrolls
   // with the page like any absolute box); the stage holds the root's height.
@@ -638,11 +730,25 @@
     if (p === 'inline') place();
     emit(p === 'floating' ? 'float' : p === 'inline' ? 'inline' : 'hidden');
   }
-  // Where the stage is decides inline vs floating — unless the transcript sheet is
-  // open over the page on a phone (the bar sits above the sheet so the sermon can be
-  // controlled while reading), or there is no stage on this page at all.
+  // The video is leaving the screen (scrolled away, a link clicked). It may not keep
+  // playing hidden, so the audio takes over where there is any; otherwise it pauses
+  // and the bar stays, offering to bring you back.
+  function leaveVideo() {
+    if (S.mode !== 'watch' || !(S.status === 'playing' || S.status === 'loading')) return;
+    if (audioUrl) {
+      S.autoLeave = true;
+      api.setMode('listen');
+      if (S.pending !== 'listen') S.autoLeave = false;
+      return;
+    }
+    if (yt && ytReady) yt.pauseVideo();
+    S.autoPaused = true;
+    say('Paused — scroll back to the video');
+    paint();
+  }
+  // Where the stage is decides inline vs floating. The video only ever shows inline.
   function applyRatio() {
-    if (S.sheet || !stage) {
+    if (!stage) {
       if (S.presentation !== 'floating') setPresentation('floating');
       return;
     }
@@ -650,10 +756,20 @@
     if (ratio >= FLOAT_IN) {
       S.dismissed = false;
       if (S.presentation !== 'inline') setPresentation('inline');
+      if (S.autoPaused && S.mode === 'watch') {
+        S.autoPaused = false;
+        say('');
+        if (yt && ytReady) { ytHoldPause = false; yt.playVideo(); }
+      }
+      if (S.playOnInline) { S.playOnInline = false; api.play(); }
+      paint();
       return;
     }
-    if (ratio < FLOAT_OUT && S.userStarted && S.presentation === 'inline' && !S.dismissed) {
-      setPresentation('floating');
+    if (ratio < FLOAT_OUT && S.presentation === 'inline') {
+      if (S.barShown || S.userStarted) {
+        leaveVideo();
+        setPresentation('floating');
+      }
     }
   }
   var io = null, ro = null, placeTick = 0;
@@ -699,17 +815,19 @@
       if (!e.detail || e.detail.key !== 'transcript') return;
       S.sheet = true;
       root.setAttribute('data-over-sheet', '');
-      applyRatio();
+      if (audioUrl) leaveVideo(); // the sheet covers the video; audio carries on underneath
+      paint();
     });
     d.addEventListener('vci:modal:close', function (e) {
       if (!e.detail || e.detail.key !== 'transcript') return;
       S.sheet = false;
       root.removeAttribute('data-over-sheet');
-      applyRatio();
+      paint();
     });
   }
   // Playback has started: the bar may now float (and must, over an open sheet).
   function started() {
+    S.dismissed = false;
     if (S.userStarted) return false;
     S.userStarted = true;
     applyRatio();
@@ -732,8 +850,16 @@
     },
     getRate: function () { return S.rate; },
     play: function () {
+      if (S.mode === 'watch' && videoId && S.presentation !== 'inline') {
+        if (audioUrl) { S.autoPaused = false; api.setMode('listen'); api.play(); return; }
+        S.playOnInline = true;
+        api.expand();
+        return;
+      }
+      S.autoPaused = false;
       if (S.mode === 'listen' && audioUrl) {
         ensureAudio();
+        claimAudio();
         if (!S.userStarted) { var t0 = maybeResume(); if (t0) audio.currentTime = t0 + S.offset; }
         var p = audio.play();
         if (p && p.catch) p.catch(function () { audioFailed('Audio did not start'); });
@@ -749,8 +875,11 @@
       }
     },
     pause: function () {
-      if (S.mode === 'listen') { if (audio) audio.pause(); return; }
+      S.autoPaused = false;
+      S.playOnInline = false;
+      if (S.mode === 'listen') { if (audio) audio.pause(); paint(); return; }
       if (yt && ytReady) yt.pauseVideo();
+      paint();
     },
     toggle: function () { if (api.isPlaying()) api.pause(); else api.play(); },
     seek: function (s, opts) {
@@ -786,6 +915,16 @@
       if (mode === S.mode) return;
       if (mode === 'listen' && !audioUrl) return;
       if (mode === 'watch' && !videoId) return;
+      if (mode === 'watch' && S.presentation !== 'inline') {
+        // Watch only happens on screen: go back to the video and switch there.
+        S.playOnInline = api.isPlaying();
+        if (S.playOnInline) api.pause();
+        S.mode = 'watch';
+        savePrefs();
+        emit('mode');
+        api.expand();
+        return;
+      }
       var t = api.getTime();
       var wasPlaying = api.isPlaying();
       clearTimeout(switchTimer);
@@ -795,6 +934,7 @@
       emit('mode');
       if (mode === 'listen') {
         ensureAudio();
+        claimAudio();
         audio.playbackRate = S.rate;
         audio.currentTime = t + S.offset;
         if (wasPlaying) {
@@ -857,6 +997,9 @@
       savePosition(true);
       paint();
     },
+    setHandoff: function (on) { S.handoff = !!on; savePrefs(); },
+    getHandoff: function () { return S.handoff; },
+    handoffLog: function () { return load(HANDOFF_LOG) || []; },
     setAudio: function (url) {
       audioUrl = url || null;
       api.hasAudio = !!audioUrl;
@@ -913,10 +1056,12 @@
     S.slug = location.pathname.replace(/\/+$/, '').split('/').pop() || 'home';
     S.href = location.pathname + location.search;
     S.mode = 'watch'; S.status = 'idle'; S.userStarted = false; S.dismissed = false; S.pending = null; S.lastTime = 0; S.sheet = false;
+    S.autoPaused = false; S.autoLeave = false; S.playOnInline = false; S.unlocked = false; S.unlocking = false;
     resumed = false; scrubbing = null;
     var prefs = load(PREF_KEY) || {};
     if (RATES.indexOf(prefs.rate) !== -1) S.rate = prefs.rate;
     if (prefs.mode === 'listen' && audioUrl) S.mode = 'listen';
+    if (prefs.handoff === false) S.handoff = false;
     if (!videoId) S.mode = 'listen';
     if (!audioUrl) S.mode = 'watch';
     if (!root) { css(); build(); }
@@ -977,7 +1122,7 @@
     var FILE = /\.(pdf|mp3|m4a|wav|zip|jpe?g|png|gif|svg|webp|avif|vtt|txt|csv|xml|rss|json|ics)$/i;
     var KEEP = '.announcement-bar, nav.navbar, [vci-nav="header"], footer.footer, footer';
 
-    function active() { return !!root && S.barShown; }
+    function active() { return !!root && S.barShown && (S.mode === 'listen' || !!audioUrl); }
     function remember() {
       Array.prototype.forEach.call(d.body.querySelectorAll(':scope > script:not([src])'), function (sc) { seenScripts[sc.textContent] = true; });
       Array.prototype.forEach.call(d.querySelectorAll('style'), function (st) { seenStyles[st.textContent] = true; });
@@ -1003,6 +1148,7 @@
       if (FILE.test(url.pathname)) return;
       if (url.pathname === location.pathname && url.search === location.search) return; // same page or a hash
       e.preventDefault();
+      leaveVideo();
       go(url.href, true);
     }
     function go(href, push) {
@@ -1043,6 +1189,7 @@
         if (v === null) d.documentElement.removeAttribute(name); else d.documentElement.setAttribute(name, v);
       });
       d.body.className = doc.body.className;
+      paint(); // puts the dock class back on the new body class
 
       // Stylesheets and page-level styles the new page brings.
       Array.prototype.forEach.call(doc.querySelectorAll('link[rel="stylesheet"]'), function (l) {
@@ -1149,9 +1296,9 @@
     css();
     build();
     watchPage();
+    watchVisibility();
     nav.start();
     w.addEventListener('pagehide', function () { savePosition(true); });
-    d.addEventListener('visibilitychange', function () { if (d.visibilityState === 'hidden') savePosition(true); });
     mount(el);
     return true;
   }
