@@ -144,6 +144,11 @@
      Sheet: + play/pause and close (.modal_close.is-sheet-only, hidden in the
      style panel, shown here while open), no expand. The scrim
      (.media-transcript_scrim) is hidden in the style panel too. */
+  /* Safari still wants the prefixed property for the style panel's
+     top/bottom fade on the scroll area. */
+  .media-transcript_body {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 1rem, black calc(100% - 1rem), transparent);
+  }
   /* Synchronize (.media-transcript_sync, hidden in the style panel). */
   [data-transcript-sync][data-show] {
     display: block;
@@ -171,6 +176,17 @@
        to scroll and read freely. */
     .media-secondary:not(.is-visible) .media-transcript_body {
       overflow: hidden;
+      cursor: pointer;
+      /* Deeper fades than the 1rem set in the style panel: the spoken
+         sentence sits just under the top one, and the Expand pill over the
+         bottom one. */
+      -webkit-mask-image: linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 4.5rem), transparent);
+      mask-image: linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 4.5rem), transparent);
+    }
+    /* "Expand" (.media-transcript_expand-pill, hidden in the style panel):
+       tells the preview apart from a scrollable box, and opens the drawer. */
+    .media-secondary:not(.is-visible) [data-transcript-expand-pill] {
+      display: block;
     }
     /* Reading text one step brighter (text-02) than the desktop card's. */
     .media-secondary [data-t-row] {
@@ -388,18 +404,32 @@
         ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
         body.scrollTo({ top: target, behavior: reduced.matches ? 'auto' : 'smooth' });
       }
-      // Preview: keep the spoken sentence in view, nudging it to the top of
-      // the box once it runs past the bottom.
-      function reveal(el) {
-        if (!body || !el || Date.now() < ownScrollUntil) return;
-        var search = $('[data-transcript-search]');
-        if (search && search.hasAttribute('data-open')) return;
+      // Preview: each spoken sentence slides up to sit just under the
+      // box's 2.5rem top fade.
+      function pin(el) {
+        if (!body || !el) return;
         var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
-        // Clear of the 1rem fades at the box's top and bottom edges.
-        if (er.top >= br.top + 12 && er.bottom <= br.bottom - 16) return;
+        var target = Math.max(0, body.scrollTop + er.top - br.top - 44);
+        if (Math.abs(target - body.scrollTop) < 4) return;
         ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
-        body.scrollTo({ top: Math.max(0, body.scrollTop + er.top - br.top - 16), behavior: reduced.matches ? 'auto' : 'smooth' });
+        body.scrollTo({ top: target, behavior: reduced.matches ? 'auto' : 'smooth' });
       }
+      // The preview isn't scrollable, so a tap on it (or on its Expand
+      // pill) opens the drawer rather than seeking.
+      var openBtn = $('[data-transcript-expand]');
+      var pill = $('[data-transcript-expand-pill]');
+      function openDrawer(e) {
+        if (!preview() || !openBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openBtn.click();
+      }
+      if (body) body.addEventListener('click', openDrawer, true);
+      if (pill) pill.addEventListener('click', openDrawer, true);
+      // Back in the box after the drawer: re-pin to wherever it's got to.
+      d.addEventListener('vci:modal:close', function (e) {
+        if (e.detail && e.detail.key === 'transcript') followed = null;
+      });
       function resync() {
         synced = true;
         showSync();
@@ -446,9 +476,8 @@
           // Always in step, playing or not, so it matches wherever the
           // drawer was left or the video was seeked to.
           synced = true;
-          var fits = row && sent && sent.getBoundingClientRect().bottom - row.getBoundingClientRect().top <= body.clientHeight - 24;
-          if (row && row !== followed && (fits || !sent)) { followed = row; follow(row, true); }
-          else { followed = row; reveal(sent); }
+          var at = sent || row;
+          if (at && at !== followed) { followed = at; pin(at); }
         } else if (state() === 1 && synced && row && row !== followed) {
           followed = row;
           follow(row);
