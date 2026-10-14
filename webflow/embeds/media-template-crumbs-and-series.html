@@ -7,6 +7,26 @@
    beside the "All 16 →" link instead of being squeezed letter by letter. */
 .media-series_playlist .media-transcript_header > .horz-flex { flex-wrap: wrap; min-width: 0; }
 .media-series_playlist .media-transcript_header > .horz-flex > h3 { white-space: nowrap; }
+/* Breadcrumb overflow fades: one at each edge with crumbs hidden past it,
+   none at an edge the crumbs already reach (the script marks
+   [data-at-start] / [data-at-end]). Replaces the style panel's right-only
+   fade. */
+.breadcrumb {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+  mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+}
+.breadcrumb[data-at-start] {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+}
+.breadcrumb[data-at-end] {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 2rem);
+  mask-image: linear-gradient(to right, transparent, black 2rem);
+}
+.breadcrumb[data-at-start][data-at-end] {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 /* Each row's speakers (a nested Collection List) are data for the script. */
 [data-series-speakers] { display: none; }
 </style>
@@ -14,7 +34,7 @@
 /* ===========================================================================
    Media item page. Two jobs, both of which the style panel genuinely can't do.
 
-   1. Breadcrumb filter links. Each crumb's label comes from a CMS field and the
+   1. Breadcrumb filter links (and its overflow fades, below). Each crumb's label comes from a CMS field and the
       href is built from it, so a new Type option or Media Series links to the
       right filter with no per-item filter-URL field. Webflow cannot concatenate
       a query string, and an Option field cannot be bound to a link at all.
@@ -51,6 +71,19 @@
       crumb.href = value
         ? '/media?' + field + '_equal=' + encodeURIComponent(value)
         : '/media';
+    });
+  }
+
+  function crumbFades() {
+    document.querySelectorAll('.breadcrumb').forEach(function (bar) {
+      var mark = function () {
+        var max = bar.scrollWidth - bar.clientWidth;
+        bar.toggleAttribute('data-at-start', bar.scrollLeft <= 1);
+        bar.toggleAttribute('data-at-end', bar.scrollLeft >= max - 1);
+      };
+      mark();
+      bar.addEventListener('scroll', mark, { passive: true });
+      window.addEventListener('resize', mark);
     });
   }
 
@@ -197,7 +230,7 @@
     });
   }
 
-  function init() { crumbs(); var s = series(); seriesLink(s ? s.total : 0); }
+  function init() { crumbs(); crumbFades(); var s = series(); seriesLink(s ? s.total : 0); }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
