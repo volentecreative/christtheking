@@ -7,6 +7,8 @@
    beside the "All 16 →" link instead of being squeezed letter by letter. */
 .media-series_playlist .media-transcript_header > .horz-flex { flex-wrap: wrap; min-width: 0; }
 .media-series_playlist .media-transcript_header > .horz-flex > h3 { white-space: nowrap; }
+/* Each row's speakers (a nested Collection List) are data for the script. */
+[data-series-speakers] { display: none; }
 </style>
 <script>
 /* ===========================================================================
@@ -25,6 +27,10 @@
       [data-series-next]), and hides the date-order nav ([data-date-nav],
       Finsweet previous-item / next-item) when the item is in a series. The
       current row gets .is-active and is centred in the playlist's scroll box.
+      Under each title: the date while one speaker gives the whole series; once
+      speakers differ, the speaker - with the date too, unless the series
+      happened within a week (a conference), where the date tells talks apart
+      no better than the number does.
    Source of truth: webflow/embeds/media-template-crumbs-and-series.html in the repo.
    =========================================================================== */
 (function () {
@@ -82,6 +88,29 @@
       total = items.length + 1;
       index = 0;
       if (dated && !isNaN(now)) items.forEach(function (it) { if (it.time < now) index++; });
+    }
+
+    /* Speaker or date under each title (see the header). */
+    var who = function (it) {
+      return Array.prototype.map.call(it.row.querySelectorAll('[data-series-speakers] .w-dyn-item'), function (n) {
+        return n.textContent.trim();
+      }).filter(Boolean).join(', ');
+    };
+    var names = items.map(who);
+    var mine = Array.prototype.map.call(document.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) {
+      return n.textContent.trim();
+    }).filter(Boolean).join(', ');
+    var mixed = names.concat(listed ? [] : [mine]).filter(function (n, i, all) {
+      return n && all.indexOf(n) === i;
+    }).length > 1;
+    if (mixed) {
+      var times = items.map(function (it) { return it.time; });
+      var event = dated && Math.max.apply(null, times) - Math.min.apply(null, times) <= 7 * 864e5;
+      items.forEach(function (it, n) {
+        var when = it.row.querySelector('[data-series-date]');
+        if (!when || !names[n]) return;
+        when.textContent = event ? names[n] : names[n] + ' \u00b7 ' + when.textContent.trim();
+      });
     }
 
     items.forEach(function (it, n) {
