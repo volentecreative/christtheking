@@ -11,20 +11,16 @@
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 0.85rem;
-    align-items: start;
+    /* Timestamp sits on the first line of its text: baselines aligned. */
+    align-items: baseline;
     margin: 0;
     padding: 0.5rem 0.6rem;
-    /* The playing row is marked by its left edge, as the playlist's active
-       row is by its border. Every row carries the 2px edge, transparent, so
-       the text doesn't shift when the mark moves. */
-    border-left: 2px solid transparent;
-    border-radius: 0 0.4rem 0.4rem 0;
+    border-radius: 0.4rem;
     cursor: pointer;
     color: var(--_theme---text-03);
     transition:
       color 0.15s ease,
-      background-color 0.15s ease,
-      border-color 0.15s ease;
+      background-color 0.15s ease;
   }
   @media (hover: hover) {
     [data-t-row]:hover {
@@ -33,7 +29,6 @@
   }
   [data-t-row][data-t-active] {
     color: var(--_theme---text-01);
-    border-left-color: var(--_theme---accent-01);
   }
   /* The transcript is timed about every 45 seconds. Within the playing row
      each sentence's start is estimated from its length, and the one being
@@ -60,7 +55,6 @@
     font-size: 0.875rem;
     font-weight: 600;
     line-height: 1;
-    letter-spacing: 0.1em;
     text-transform: uppercase;
     font-variant-numeric: tabular-nums;
     text-decoration: none;
@@ -346,14 +340,14 @@
       });
 
       /* Follow-along with a Synchronize button, as Spotify's lyrics do.
-         While the sermon plays the box keeps the current sentence a third of
-         the way down. Scrolling it yourself while it plays lets go of it and
+         While the sermon plays, each new section is brought to the top of
+         the box as it starts. Scrolling it yourself while it plays lets go of it and
          shows "Synchronize" at the bottom of the box; tapping that (or a
          timestamp) snaps back and follows again. */
       var body = $('.media-transcript_body');
       var syncWrap = $('[data-transcript-sync]');
       var syncBtn = syncWrap && syncWrap.querySelector('a, button');
-      var row = null, sent = null, synced = true, ownScrollUntil = 0;
+      var row = null, sent = null, followed = null, synced = true, ownScrollUntil = 0;
       function playing() { var st = state(); return st === 1 || st === 3; }
       function showSync() {
         if (syncWrap) syncWrap.toggleAttribute('data-show', !synced && playing());
@@ -377,7 +371,7 @@
         var search = $('[data-transcript-search]');
         if (!force && search && search.hasAttribute('data-open')) return;
         var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
-        var target = Math.max(0, body.scrollTop + er.top - br.top - body.clientHeight / 3);
+        var target = Math.max(0, body.scrollTop + er.top - br.top - 8);
         if (Math.abs(target - body.scrollTop) < 4) return;
         // Our own scrolling mustn't read as the reader taking over.
         ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
@@ -386,7 +380,8 @@
       function resync() {
         synced = true;
         showSync();
-        follow(sent || row, true);
+        followed = row;
+        follow(row, true);
       }
       if (syncBtn) syncBtn.addEventListener('click', function (e) {
         e.preventDefault();
@@ -421,7 +416,13 @@
           sent = el;
           if (sent) sent.setAttribute('data-t-now', '');
         }
-        if (state() === 1) follow(sent || row);
+        // Move only when a new timestamped section starts, bringing it to the
+        // top of the box; within a section the box stays still and only the
+        // sentence highlight moves.
+        if (state() === 1 && synced && row && row !== followed) {
+          followed = row;
+          follow(row);
+        }
         showSync();
       }, 400);
       tools();
