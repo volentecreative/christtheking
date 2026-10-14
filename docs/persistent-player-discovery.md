@@ -654,3 +654,17 @@ Consequences for Phase 1: add `itunes:author` → `speaker-s` backfill (blank
 field only, matching speaker record required, as today); report the one
 missing episode; the duration matcher is fallback only.
 
+---
+
+## J. Addendum 2026-10-14 — Phase 2 built
+
+`webflow/registered/media-player.js` (the player), the transcript embed
+re-pointed at it (`webflow/embeds/media-template-transcript.html`, which also
+re-mirrors the live iframe builder), `test/media-player.test.mjs` with a
+stubbed YouTube API and generated audio, and the `webflow/README.md` section
+"The sermon player" with the Designer steps and hosting options. Not built:
+Phase 1 (Libsyn in the sync), Phase 3/4 (background handoff), Phase 5
+(resume on the next page). Blocked on the Designer side: `data-audio-url`
+bound to Audio URL on `.video-embed`, the embed paste, and a host for the
+registered script (this repo is private, so not jsDelivr).
+

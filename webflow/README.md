@@ -11,9 +11,10 @@ in the Designer.
 | `site-footer.html` | Site settings → Custom code → **Footer** |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 | `registered/scroll-to-top.js` | Site settings → Custom code → **Registered scripts**, as `scrollToTop` (drives `.scroll-to-top_button` in the footer component) |
+| `registered/media-player.js` | Site settings → Custom code → **Registered scripts**, as `mediaPlayer`, applied site-wide in the footer. The sermon player: Watch (YouTube) and Listen (the podcast MP3) in one component, inline on the Media Template and floating once the video scrolls away. See [The sermon player](#the-sermon-player) |
 | `registered/reading-progress.js` | Site settings → Custom code → **Registered scripts**, as `readingProgress` (fills the gold `.navbar-progress_fill` inside the 2px `.navbar-progress` track on pages with a `[data-reading-progress]` element: Journals Template body, Beliefs, Elder Affirmation, Member Covenant; also writes "N min read" into any `[data-read-time]`) |
 | `embeds/media-template-crumbs-and-series.html` | Media Template page → the HTML Embed with class `breadcrumb-handler` (crumb filter links, series numbering, Previous / Next, active row, "All 16 →" link to the filtered series) |
-| `embeds/media-template-transcript.html` | Media Template page → the HTML Embed at the end of `.media-transcript` (timestamp rows, estimated current sentence (rounded highlight) and section-by-section follow-along while playing with a Spotify-style "Synchronize" button after the reader scrolls away, YouTube link-up, search / copy / download; on tablet/phone an inline box that expands into the shared bottom-sheet drawer with play/pause) |
+| `embeds/media-template-transcript.html` | Media Template page → the HTML Embed at the end of `.media-transcript` (builds the YouTube iframe when `mediaPlayer` is not on the page, else follows `window.ctkPlayer`; timestamp rows, estimated current sentence (rounded highlight) and section-by-section follow-along while playing with a Spotify-style "Synchronize" button after the reader scrolls away, YouTube link-up, search / copy / download; on tablet/phone an inline box that expands into the shared bottom-sheet drawer with play/pause) |
 | `embeds/jump-menu.html` | Beliefs and Elder Affirmation pages → the jump-menu script HTML Embed (active-article tracking + the mobile Contents drawer extras; the drawer itself is narthex `vci-modal="drawer"` key `toc`) |
 | `embeds/filter-toolbar.html` | Media and Study Tools pages → Page settings → Custom code → **Before `</body>`**, after the drawer helpers (toolbar state: chip row visibility, "Clear all" at 2+ filters, white-outline → gold Filters button with count badge, drawer-title count, "Sort by" value label, chip-row edge fades and drawer swipe fix, search clear button, input placeholders, ticking the checkboxes of filters that arrive in the URL; `<style>` for dropdown open animation, Type pills' checked state and focus rings) |
 | `embeds/filter-drawer-helpers.html` | Same two page footers, first block (drawer list edge fades via `[data-scroll-fade]`, drawer chip row mirrored from the toolbar via `[data-chips-mirror]`). Study Tools has two page-specific blocks before it (sidebar scroll, checkbox sync) |
@@ -199,6 +200,79 @@ alignment in either state is set in the Designer and takes effect as-is.
 
 Untouched and still registered scripts: `LivestreamResolver`,
 `Theme Logo Swap CSS`. `navbarSpeakerNames` is now tracked here — see below.
+
+## The sermon player
+
+`registered/media-player.js` is one player for both of a sermon's sources:
+**Watch**, the YouTube IFrame API, and **Listen**, the podcast MP3 in an HTML
+`<audio>`. It renders inside the Media Template's `.video-embed` stage, floats
+to a dock when the video scrolls out of view after someone has pressed play,
+and comes back inline when they scroll back. Desktop and phone use the same
+component, state and controls; only the dock's geometry differs (a 26rem card
+in the bottom-right corner on desktop, an edge-to-edge strip at the bottom on
+phones). Full contract in the file's header comment; the design reasoning is
+in [`docs/persistent-player-discovery.md`](../docs/persistent-player-discovery.md).
+
+What it does: Listen ⇄ Watch switching that keeps the position and speed
+(near-seamless hard handoff: the MP3 starts muted at the video's time, then
+YouTube pauses); ±15 s; speed 0.75–2×; lock-screen metadata and controls in
+Listen mode through the Media Session API; the last position per sermon and
+the preferred mode and speed remembered in `localStorage`; Watch-only and
+Listen-only sermons; loading and error states that fall back to the other
+source and never restart the sermon.
+
+What it does not do, by design: play YouTube hidden or in the background,
+draw anything over the YouTube player, or shrink it below 200×200px — all
+three are YouTube API policy. The floating video on a phone is therefore a
+full-width strip, and the controls always sit under the video.
+
+### Designer side
+
+| Where | What | Status |
+| --- | --- | --- |
+| Media Template → `.video-embed` | `data-youtube-id` bound to **YouTube Video ID** | exists |
+| Media Template → `.video-embed` | **`data-audio-url` bound to Audio URL** | **to add** — a custom attribute whose value is bound to the CMS field. Without it the player is Watch-only. The Data API cannot write a bound attribute, so this is a Designer step. |
+| Media Template → `.video-embed` | `data-audio-offset` bound to Audio Offset Seconds (optional, once that field exists) | later |
+| Media Template → transcript embed | paste the current `embeds/media-template-transcript.html` | **to do** — the live embed still owns the iframe itself; the repo version defers to the player when it is on the page and works alone when it is not |
+| Site settings → Registered scripts | register `media-player.js` as `mediaPlayer`, apply to the site footer | **to do** — see hosting, below |
+
+The dock is built by the script (title, status, Listen/Watch, −15, play,
++15, speed, time, expand, close), styled only with the site's tokens
+(`--_theme---*`, `--border-radius-*`, JetBrains Mono) and its own
+`media-player_*` classes, so nothing in the Designer has to be drawn for it.
+Override with CSS on those classes if the look needs adjusting.
+
+### Hosting the script
+
+Webflow's inline registered scripts are capped at 2,000 characters and this
+one is ~36 KB, so it has to be a **hosted** registered script. This repository
+is private, so jsDelivr cannot serve it the way it serves narthex. Options, in
+order of preference: a small public `volentecreative/christtheking-web`
+repository holding only `webflow/` (jsDelivr, pinned to a tag, SRI hash in the
+registration); or a public release asset; or any static host the agency
+already runs. Once a URL exists, `register_hosted_script` + `add_site_script`
+through the Data API does the rest, like the scripts above.
+
+### API, for page code
+
+`window.ctkPlayer` — `ready`, `hasVideo`, `hasAudio`, `getMode()`, `getTime()`
+(video timeline, so `#t=` anchors work in both modes), `getDuration()`,
+`isPlaying()`, `play()`, `pause()`, `toggle()`, `seek(s, { play })`,
+`skip(±s)`, `setMode('watch' | 'listen')`, `setRate(r)`, `expand()`, `close()`,
+`on(event, fn)`. Events on `document`: `ctk:player:ready`, `play`, `pause`,
+`ended`, `time`, `mode`, `float`, `inline`, `hidden`, `error`. The transcript
+embed is the first consumer.
+
+### Tests
+
+`npm run test:browser` runs `test/media-player.test.mjs` alongside the
+speaker-names test: the YouTube IFrame API is stubbed with a fake player that
+keeps time, the MP3 is a generated silent WAV, and the transcript embed is
+loaded from its source file. It covers inline → floating → inline without an
+iframe reload, the phone strip's 200px minimum, Watch ⇄ Listen position and
+speed, paused switching, a 404 MP3 falling back to video, ±15 and speed,
+close and dismissal, resume on the next visit, the embed following the
+player, and the embed standing alone when the script is absent.
 
 ## `navbarSpeakerNames` — filling the media card's speaker
 
