@@ -143,6 +143,10 @@
   [data-transcript-grab] {
     display: none;
   }
+  /* Synchronize (.media-transcript_sync, hidden in the style panel). */
+  [data-transcript-sync][data-show] {
+    display: block;
+  }
   .media-transcript.is-visible [data-transcript-close],
   .media-transcript.is-visible [data-transcript-play] {
     display: flex;
@@ -326,22 +330,57 @@
         c.sents = sentences(c.row, c.s, next ? next.s : null);
       });
 
+      /* Follow-along with a Synchronize button, as Spotify's lyrics do.
+         While the sermon plays the box keeps the current sentence a third of
+         the way down. Scrolling it yourself while it plays lets go of it and
+         shows "Synchronize" at the bottom of the box; tapping that (or a
+         timestamp) snaps back and follows again. */
       var body = $('.media-transcript_body');
-      var row = null, sent = null, quietUntil = 0;
-      // A reader scrolling the box takes it over; following resumes a few
-      // seconds after they stop.
-      if (body) ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(function (ev) {
-        body.addEventListener(ev, function () { quietUntil = Date.now() + 5000; }, { passive: true });
-      });
-      function follow(el) {
-        if (!body || !el || Date.now() < quietUntil) return;
-        var search = $('[data-transcript-search]');
-        if (search && search.hasAttribute('data-open')) return;
-        var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
-        var target = body.scrollTop + er.top - br.top - body.clientHeight / 3;
-        if (Math.abs(target - body.scrollTop) < 4) return;
-        body.scrollTo({ top: Math.max(0, target), behavior: reduced.matches ? 'auto' : 'smooth' });
+      var syncWrap = $('[data-transcript-sync]');
+      var syncBtn = syncWrap && syncWrap.querySelector('a, button');
+      var row = null, sent = null, synced = true, ownScrollUntil = 0;
+      function playing() { var st = state(); return st === 1 || st === 3; }
+      function showSync() {
+        if (syncWrap) syncWrap.toggleAttribute('data-show', !synced && playing());
       }
+      function letGo() {
+        // Scroll events from our own smooth scroll keep extending its window.
+        if (Date.now() < ownScrollUntil) { ownScrollUntil = Date.now() + 150; return; }
+        if (!playing()) return;
+        synced = false;
+        showSync();
+      }
+      if (body) {
+        body.addEventListener('scroll', letGo, { passive: true });
+        // A finger or wheel on the box is always the reader, even mid-animation.
+        ['wheel', 'touchstart'].forEach(function (ev) {
+          body.addEventListener(ev, function () { ownScrollUntil = 0; }, { passive: true });
+        });
+      }
+      function follow(el, force) {
+        if (!body || !el || (!synced && !force)) return;
+        var search = $('[data-transcript-search]');
+        if (!force && search && search.hasAttribute('data-open')) return;
+        var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
+        var target = Math.max(0, body.scrollTop + er.top - br.top - body.clientHeight / 3);
+        if (Math.abs(target - body.scrollTop) < 4) return;
+        // Our own scrolling mustn't read as the reader taking over.
+        ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
+        body.scrollTo({ top: target, behavior: reduced.matches ? 'auto' : 'smooth' });
+      }
+      function resync() {
+        synced = true;
+        showSync();
+        follow(sent || row, true);
+      }
+      if (syncBtn) syncBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        resync();
+      });
+      // Tapping a timestamp is choosing where to be: follow from there.
+      cues.forEach(function (c) {
+        c.row.addEventListener('click', function () { synced = true; showSync(); });
+      });
 
       setInterval(function () {
         if (!player || !ready || !player.getCurrentTime) return;
@@ -367,9 +406,8 @@
           sent = el;
           if (sent) sent.setAttribute('data-t-now', '');
         }
-        // Follow the sermon while it plays: the current sentence (or row)
-        // a third of the way down the box.
         if (state() === 1) follow(sent || row);
+        showSync();
       }, 400);
       tools();
     }
