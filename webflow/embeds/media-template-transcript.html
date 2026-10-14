@@ -92,10 +92,10 @@
   /* Search row: the media page's search field (.media-filters_search /
      .media-filters_input) re-used; its toolbar layout (full-width, first on
      tablet, 14rem cap) is undone for this row. */
-  /* Closed until the search button opens it (Webflow drops a static
-     hidden attribute, so the open state is data-open). */
-  [data-transcript-search]:not([data-open]) {
-    display: none;
+  /* Closed by default (.media-transcript_header.is-search, style panel)
+     until the search button opens it. */
+  [data-transcript-search][data-open] {
+    display: flex;
   }
   [data-transcript-search] .media-filters_search {
     flex: 1 1 auto;
@@ -136,12 +136,11 @@
     white-space: nowrap;
   }
   /* Header buttons by context. Desktop card: search, copy, download.
-     Tablet/phone box: + expand. Sheet: + play/pause and close, no expand. */
-  [data-transcript-expand],
-  [data-transcript-close],
-  [data-transcript-play],
-  [data-transcript-grab],
-  .media-secondary > [vci-modal='scrim'] {
+     Tablet/phone box: + expand (.modal_close.is-expand, style panel).
+     Sheet: + play/pause and close (.modal_close.is-sheet-only, hidden in the
+     style panel, shown here while open), no expand. The scrim
+     (.media-transcript_scrim) is hidden in the style panel too. */
+  [data-transcript-grab] {
     display: none;
   }
   .media-transcript.is-visible [data-transcript-close],
@@ -159,16 +158,11 @@
     opacity: 0.35;
   }
   @media (max-width: 991px) {
-    [data-transcript-expand] {
-      display: flex;
-    }
     .media-transcript.is-visible [data-transcript-expand] {
       display: none;
     }
     .media-secondary.is-visible > [vci-modal='scrim'] {
       display: block;
-      position: fixed;
-      z-index: 1000;
     }
     .media-transcript.is-visible {
       padding-bottom: env(safe-area-inset-bottom);
