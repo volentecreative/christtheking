@@ -802,13 +802,30 @@ test('buildFieldData normalizes the name but reads scripture from the raw title'
 const SPEAKER_RECORDS = [
   { id: 'sp-andy', name: 'Andy Naselli' },
   { id: 'sp-clint', name: 'Clint Manley' },
+  { id: 'sp-tom', name: 'Tom Dodds' },
+  { id: 'sp-dustin', name: 'Dustin Williams' },
 ];
 
-test('speakerText joins names in the order the ids are given', () => {
+test('speakerText joins two names with "and", in the order the ids are given', () => {
   assert.equal(
     speakerText(['sp-clint', 'sp-andy'], SPEAKER_RECORDS),
-    'Clint Manley, Andy Naselli'
+    'Clint Manley and Andy Naselli'
   );
+});
+
+test('speakerText joins three or more with commas and an Oxford comma before "and"', () => {
+  assert.equal(
+    speakerText(['sp-andy', 'sp-tom', 'sp-clint'], SPEAKER_RECORDS),
+    'Andy Naselli, Tom Dodds, and Clint Manley'
+  );
+  assert.equal(
+    speakerText(['sp-andy', 'sp-tom', 'sp-dustin', 'sp-clint'], SPEAKER_RECORDS),
+    'Andy Naselli, Tom Dodds, Dustin Williams, and Clint Manley'
+  );
+});
+
+test('speakerText counts only the names it found when placing "and"', () => {
+  assert.equal(speakerText(['sp-andy', 'sp-ghost', 'sp-tom'], SPEAKER_RECORDS), 'Andy Naselli and Tom Dodds');
 });
 
 test('speakerText drops ids with no matching Speaker record', () => {

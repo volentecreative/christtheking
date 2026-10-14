@@ -42,7 +42,13 @@ test('an already-correct item is left alone', () => {
 
 test('multiple speakers join in reference order', () => {
   const plan = planReconcile([item('A', ['sp-clint', 'sp-andy'], '')], SPEAKERS);
-  assert.equal(plan.writes[0].to, 'Clint Manley, Andy Naselli');
+  assert.equal(plan.writes[0].to, 'Clint Manley and Andy Naselli');
+});
+
+test('text in the old "A, B" style is rewritten to "A and B"', () => {
+  const plan = planReconcile([item('A', ['sp-clint', 'sp-andy'], 'Clint Manley, Andy Naselli')], SPEAKERS);
+  assert.equal(plan.writes.length, 1);
+  assert.equal(plan.writes[0].to, 'Clint Manley and Andy Naselli');
 });
 
 test('an item with no speaker is counted, and its text is not disturbed', () => {

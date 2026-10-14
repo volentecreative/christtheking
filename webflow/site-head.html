@@ -163,3 +163,39 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 </style>
+
+<!-- ===========================================================
+     NAMES IN A RUN: "A", "A and B", "A, B, and C" (Oxford comma)
+     Why custom code: a card's contributors are a nested Collection
+     List, one item per person, and where the separators go depends
+     on each item's position - which only a structural selector
+     knows. The list's word-sized gap (.contributor_list-card,
+     style panel) is the space after each comma. The same style is
+     what the sync writes into a media item's speaker-text
+     (speakerText in lib/parse.js). The "and" is quieter than the
+     names (text-03).
+     =========================================================== -->
+<style>
+.contributor_list-card > .w-dyn-item:not(:last-child) > *::after {
+  content: ",";
+}
+.contributor_list-card > .w-dyn-item:first-child:nth-last-child(2) > *::after {
+  content: none;
+}
+.contributor_list-card > .w-dyn-item:last-child:not(:first-child) > *::before {
+  content: "and ";
+  color: var(--_theme---text-03);
+}
+</style>
+
+<!-- ===========================================================
+     TAP FEEDBACK ON iOS
+     The style panel's Pressed (:active) states - series playlist
+     rows and the jump-menu links at tablet down - only show on iOS
+     Safari once the page has a touchstart listener somewhere; without
+     one, :active never applies to a tap. This is that listener. It
+     does nothing and is passive, so scrolling is unaffected.
+     =========================================================== -->
+<script>
+document.addEventListener('touchstart', function () {}, { passive: true });
+</script>
