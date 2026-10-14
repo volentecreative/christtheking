@@ -187,3 +187,15 @@ html {
   color: var(--_theme---text-03);
 }
 </style>
+
+<!-- ===========================================================
+     TAP FEEDBACK ON iOS
+     The style panel's Pressed (:active) states - series playlist
+     rows and the jump-menu links at tablet down - only show on iOS
+     Safari once the page has a touchstart listener somewhere; without
+     one, :active never applies to a tap. This is that listener. It
+     does nothing and is passive, so scrolling is unaffected.
+     =========================================================== -->
+<script>
+document.addEventListener('touchstart', function () {}, { passive: true });
+</script>
