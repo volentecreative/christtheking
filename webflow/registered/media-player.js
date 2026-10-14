@@ -1224,6 +1224,10 @@
       // registered scripts that bind to elements at load.
       Array.prototype.forEach.call(doc.body.querySelectorAll(':scope > script'), function (sc) {
         if (sc.src) {
+          // Webflow ships a runtime bundle per page; running a second one on top of the first
+          // throws inside its module registry and kills the dropdowns. The loaded runtime is
+          // re-initialised below instead (Webflow.destroy / ready), which is what it offers.
+          if (/\/js\/webflow[.-]/.test(sc.src) || /jquery/.test(sc.src)) return;
           if (/website-files\.com\/.*%2F.*\.js/.test(sc.src) && !/media-player/.test(sc.src)) {
             // registered scripts re-run so they bind to the new content
             d.body.appendChild(cloneScript(sc));
