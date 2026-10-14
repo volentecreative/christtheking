@@ -682,3 +682,8 @@ also redesigned to the series-playlist row style with a scrubbable progress
 edge, and the floating state trimmed to title, speaker, time, play/pause and
 progress. See `webflow/README.md`, "The sermon player".
 
+Later the same day the inline bar under the video was dropped altogether:
+the video sits in the page as before, a Listen icon joins the "Listen on"
+row, and a bottom bar exists only while a sermon plays (pausing hides it,
+and with it the in-place navigation).
+

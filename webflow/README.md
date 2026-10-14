@@ -205,17 +205,18 @@ Untouched and still registered scripts: `LivestreamResolver`,
 
 `registered/media-player.js` is one player for both of a sermon's sources:
 **Watch**, the YouTube IFrame API, and **Listen**, the podcast MP3 in an HTML
-`<audio>`. Its bar is styled like a series-playlist row (title, speaker and
-time on the meta line, the site's type styles and tokens) with a gold progress
-edge you can scrub, and sits under the video on the Media Template. Once
-someone has pressed play and the video scrolls out of view, the bar floats:
-title, speaker, time, play/pause and progress, in the bottom-right corner on
-desktop and across the bottom on phones. Tapping the title goes back to the
-sermon page. While YouTube is actually playing it stays above the floating bar
-at a legal size (its policy forbids hiding a playing player); in Listen mode,
-or paused, the bar is on its own. Full contract in the file's header comment;
-the design reasoning is in
-[`docs/persistent-player-discovery.md`](../docs/persistent-player-discovery.md).
+`<audio>`. On the Media Template the video sits in the page as it always did,
+with nothing under it; a **Listen** icon button joins the "Listen on"
+Spotify / Apple row (first in the row; a labelled button after the stage on a
+page without that row). Only while a sermon is playing does a bar appear,
+fixed to the bottom of the screen: a gold scrubbable progress edge along its
+top, then title, speaker and time on the meta line (the series-playlist row
+styles), Listen/Watch and play/pause. Pausing hides it; the title goes back
+to the sermon page. A YouTube video that is playing while its stage has
+scrolled away rides above the bar at a legal size (YouTube's policy forbids
+hiding a playing player); in Listen mode, or paused, there is no video on
+screen. Full contract in the file's header comment; the design reasoning is
+in [`docs/persistent-player-discovery.md`](../docs/persistent-player-discovery.md).
 
 **Playback carries across pages.** A normal link unloads the document and the
 audio with it, so while the player is active (started and not closed) the
@@ -226,16 +227,17 @@ own scripts run, and Webflow (`destroy`/`ready`/IX2), Finsweet Attributes
 (`modules.*.restart()`) and narthex (`accordion.init()`, `nav.measure()`) are
 told about the new content. The player root is a child of `<body>`, outside
 the swapped content, so the YouTube iframe and the audio are never touched.
-Back/forward work the same way. Closing the player restores ordinary
+Back/forward work the same way. Pausing (the bar goes away) restores ordinary
 navigation; modifier-clicks, new-tab links, hashes, downloads and files are
 always left to the browser; `data-player-nav="off"` on a link or an ancestor
 opts it out. Arriving on another sermon page loads that sermon into the
 player, paused, and remembers where the previous one was.
 
 What else it does: Listen ⇄ Watch switching that keeps the position and
-speed (the MP3 starts muted at the video's time, then YouTube pauses); ±15 s;
-speed 0.75–2×; lock-screen metadata and controls in Listen mode through the
-Media Session API; the last position per sermon and the preferred mode and
+speed (the MP3 starts muted at the video's time, then YouTube pauses); ±15 s
+and speed through the API and the lock screen (no buttons for them on the
+bar); lock-screen metadata and controls in Listen mode through the Media
+Session API; the last position per sermon and the preferred mode and
 speed remembered in `localStorage`; Watch-only and Listen-only sermons;
 loading and error states that fall back to the other source and never restart
 the sermon. On a phone with the transcript sheet open, the bar floats above
@@ -256,11 +258,13 @@ three are YouTube API policy.
 | Media Template → transcript embed | the current `embeds/media-template-transcript.html` | done 2026-10-14 — defers to the player when it is on the page, works alone when it is not |
 | Site settings → Registered scripts | `mediaPlayer` 1.0.0 registered and applied to the site footer | done 2026-10-14, live on the next site publish |
 
-The bar is built by the script and uses the site's own classes where a
-playlist row does (`text-style-title-small`, `media-meta`,
-`text-style-media-meta`, `meta-divider`) plus its `media-player_*` classes and
-the tokens (`--_theme---*`, `--border-radius-*`), so nothing in the Designer
-has to be drawn for it and restyling those site classes restyles the bar.
+The bar and the Listen button are built by the script and use the site's
+own classes where a playlist row and the platform icons do
+(`text-style-title-small`, `media-meta`, `text-style-media-meta`,
+`meta-divider`, `icon-button`) plus `media-player_*` classes and the tokens
+(`--_theme---*`, `--border-radius-*`, `--_spacing---gutter`), so nothing in
+the Designer has to be drawn for them and restyling those site classes
+restyles the bar.
 
 ### Hosting the script
 
@@ -275,7 +279,7 @@ https://cdn.jsdelivr.net/gh/volentecreative/christtheking@<commit>/webflow/regis
 
 Registered 2026-10-14 as `mediaPlayer` 1.0.0 (commit `c87209a`) and applied
 to the site footer through the Data API; 1.1.0 the same day (bar redesign,
-cross-page playback). To ship a change: commit it, then
+cross-page playback); 1.2.0 (bottom bar only while playing, Listen button). To ship a change: commit it, then
 re-register with the new commit's URL and hash and bump the version:
 
 ```sh

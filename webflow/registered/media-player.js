@@ -18,13 +18,15 @@
  *
  *   Debug only: ?ctk-audio=<url> overrides data-audio-url (never in production links).
  *
- * WHAT IT BUILDS, inside the stage
- *   .media-player [data-player="root"] [data-mode] [data-presentation] [data-status]
- *     .media-player_video   the 16:9 box that owns the YouTube iframe, for the page's life
- *     .media-player_bar     title · status · Listen/Watch · −15 · play/pause · +15 · speed · time · expand · close
- *   The iframe is never moved in the DOM (moving an iframe reloads it). Inline
- *   and floating are the same element at two geometries: in flow inside the
- *   stage, or position:fixed at the dock, with the stage holding its height.
+ * WHAT IT BUILDS (on <body>)
+ *   .media-player [data-player="root"] [data-mode] [data-presentation] [data-status] [data-bar]
+ *     .media-player_video   the 16:9 box that owns the YouTube iframe for the page's life:
+ *                           laid over the stage while it is in view, fixed above the bar
+ *                           while a video plays off-screen, hidden otherwise
+ *     .media-player_bar     fixed to the bottom while a sermon plays: progress edge · title ·
+ *                           speaker · time · Listen/Watch · play/pause. Pausing hides it.
+ *   .media-player_listen    a "Listen" icon button added to the page's "Listen on" row
+ *   The iframe is never moved in the DOM (moving an iframe reloads it).
  *
  * YOUTUBE POLICY (developers.google.com/youtube/terms/required-minimum-functionality)
  *   The player viewport stays ≥ 200×200px, nothing is drawn over it, and
@@ -125,11 +127,8 @@
     close: 'm256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z',
     expand: 'M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h184v80H120Z',
     listen: 'M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z',
-    watch: 'M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Zm240-40 240-160-240-160v320Z',
-    back: 'M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440h80q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l62 62-56 58-160-160 160-160 56 58-62 62h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80Z',
-    forward: 'M480-80q75 0 140.5-28.5t114-77q48.5-48.5 77-114T840-440h-80q0 117-81.5 198.5T480-160q-117 0-198.5-81.5T200-440q0-117 81.5-198.5T480-720h6l-62 62 56 58 160-160-160-160-56 58 62 62h-6q-75 0-140.5 28.5t-114 77q-48.5 48.5-77 114T120-440q0 75 28.5 140.5t77 114q48.5 48.5 114 77T480-80Z'
+    watch: 'M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Zm240-40 240-160-240-160v320Z'
   };
-  var SKIP_LABEL = '<text x="480" y="-380" text-anchor="middle" font-size="300" font-weight="700" font-family="JetBrains Mono, monospace" fill="currentColor">' + SKIP + '</text>';
 
   /* ---------- CSS: the bar is a series-playlist row (same padding, radius, border and type
      styles as .media-playlist_item.small), on the card surface, with a progress edge. ---------- */
@@ -137,20 +136,29 @@
     if ($('style[data-player-style]')) return;
     var s = el('style', null, { 'data-player-style': '' });
     s.textContent = [
-      '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0;transition:none}',
       /* The root is a child of <body>, never of the page content, so a content swap never touches it.
-         Inline it is an absolute box laid over the stage (which keeps the height); floating it is fixed. */
-      '.media-player{position:absolute;z-index:3;display:flex;flex-direction:column;gap:.5rem;box-sizing:border-box;color:var(--_theme---text-01)}',
-      '.video-embed[data-player-active]{height:0}',
-      '.media-player_video{position:relative;aspect-ratio:16/9;border-radius:var(--border-radius-medium);overflow:clip;background:var(--_theme---background-02)}',
+         It has no box of its own: the video box is laid over the stage (or fixed above the bar), and
+         the bar is fixed to the bottom of the screen while a sermon plays. */
+      '.media-player{display:contents;color:var(--_theme---text-01)}',
+      '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0;transition:none}',
+      '.media-player_video{position:absolute;z-index:3;aspect-ratio:16/9;border-radius:var(--border-radius-medium);overflow:clip;background:var(--_theme---background-02)}',
       '.media-player_video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
-      '.media-player_bar{position:relative;display:flex;align-items:center;gap:.5rem .75rem;padding:.5rem .75rem .875rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);background-color:var(--_theme---background-02);overflow:hidden}',
-      '.media-player_info{display:flex;flex-direction:column;flex:1 1 8rem;min-width:0;gap:.4rem}',
+      '.media-player[data-has-video="false"] .media-player_video{display:none}',
+      /* Playing video that has scrolled away rides above the bar at a legal size (YouTube forbids hiding
+         a playing player); in Listen mode or paused there is no video on screen. */
+      '.media-player[data-presentation="floating"] .media-player_video{display:none}',
+      '.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{display:block;position:fixed;z-index:95;right:1rem;bottom:calc(var(--player-dock-height,0px) + .75rem);width:min(24rem,calc(100vw - 2rem));border-radius:var(--border-radius-small);border:2px solid var(--_theme---border-02)}',
+      '.media-player[data-presentation="hidden"] .media-player_video{display:none}',
+      /* The bar: a series-playlist row fixed to the bottom edge, full width, with the progress edge on top. */
+      '.media-player_bar{position:fixed;z-index:95;left:0;right:0;bottom:0;display:flex;align-items:center;gap:.5rem .75rem;padding:.75rem var(--_spacing---gutter,1rem) calc(.5rem + env(safe-area-inset-bottom,0px));border-top:2px solid var(--_theme---border-02);background-color:var(--_theme---background-02);transform:translateY(100%);opacity:0;visibility:hidden;transition:transform 240ms cubic-bezier(.22,1,.36,1),opacity 200ms ease-out,visibility 0s linear 240ms}',
+      '.media-player[data-bar="on"] .media-player_bar{transform:none;opacity:1;visibility:visible;transition-delay:0s}',
+      '.media-player[data-over-sheet] .media-player_bar,.media-player[data-over-sheet][data-presentation="floating"] .media-player_video{z-index:1002}',
+      '@media (prefers-reduced-motion:reduce){.media-player_bar{transition:none}}',
+      '.media-player_info{display:flex;flex-direction:column;flex:1 1 8rem;min-width:0;gap:.4rem;cursor:pointer}',
+      '.media-player_info:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px;border-radius:.25rem}',
       '.media-player_title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.media-player_info[role="button"]{cursor:pointer}',
-      '.media-player_info[role="button"]:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px;border-radius:.25rem}',
       '.media-player_meta{min-width:0}',
-      '.media-player_meta > [data-empty],.media-player_meta > [data-empty] + .meta-divider{display:none}',
+      '.media-player_meta > [data-empty],.media-player_meta > [data-empty] + .meta-divider,.media-player_meta > .meta-divider:has(+ [data-empty]){display:none}',
       '.media-player_meta > .meta-divider:first-child{display:none}',
       '.media-player_controls{display:flex;align-items:center;gap:.25rem;flex:none}',
       '.media-player_btn{display:inline-flex;align-items:center;justify-content:center;width:2.75rem;height:2.75rem;padding:0;border:0;border-radius:var(--border-radius-small);background:transparent;color:var(--_theme---text-01);cursor:pointer;font:inherit}',
@@ -160,36 +168,22 @@
       '.media-player_btn[aria-pressed="true"]{color:var(--_theme---accent-01)}',
       '@media (hover:hover){.media-player_btn:hover{background-color:var(--_theme---background-03)}.media-player_btn[data-size="large"]:hover{background-color:var(--_theme---accent-01);filter:brightness(1.08)}}',
       '.media-player_btn:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:2px}',
-      '.media-player_btn[disabled],.media-player_btn[aria-disabled="true"]{opacity:.4;cursor:default}',
       '.media-player_btn[data-on] [data-icon="off"],.media-player_btn:not([data-on]) [data-icon="on"]{display:none}',
-      '.media-player_rate{font-family:"JetBrains Mono",monospace;font-size:.8125rem;font-weight:600;width:3rem}',
-      /* Progress: a 12px touch strip along the bottom edge, drawn as a 3px track with a gold fill. */
-      '.media-player_progress{position:absolute;left:0;right:0;bottom:0;height:.75rem;cursor:pointer;touch-action:none}',
-      '.media-player_progress::before{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background-color:var(--_theme---border-02)}',
-      '.media-player_progress_fill{position:absolute;left:0;bottom:0;height:3px;width:var(--player-progress,0%);background-color:var(--_theme---accent-01)}',
+      /* Progress: a 12px touch strip along the top edge, drawn as a 3px track with a gold fill. */
+      '.media-player_progress{position:absolute;left:0;right:0;top:-2px;height:.75rem;cursor:pointer;touch-action:none}',
+      '.media-player_progress::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background-color:var(--_theme---border-02)}',
+      '.media-player_progress_fill{position:absolute;left:0;top:0;height:3px;width:var(--player-progress,0%);background-color:var(--_theme---accent-01)}',
       '.media-player_progress:focus-visible{outline:2px solid var(--_theme---accent-01);outline-offset:-2px}',
       '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress_fill,.media-player_progress:hover .media-player_progress_fill{height:5px}',
-      /* Floating: the bar alone — title, speaker, time, play/pause, progress — in the corner. */
-      '.media-player[data-presentation="floating"]{position:fixed;z-index:95;top:auto;left:auto;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0px));width:min(24rem,calc(100vw - 2rem));margin:0}',
+      /* The "Listen" entry point next to the Spotify / Apple icons (or after the stage when that row is absent). */
+      '.media-player_listen svg{width:100%;height:100%}',
+      '.media-player_listen[aria-pressed="true"]{color:var(--_theme---accent-01)}',
+      '.media-player_listen.is-fallback{display:inline-flex;align-items:center;gap:.5rem;width:auto;padding:.5rem .75rem;margin-top:.75rem;border:2px solid var(--_theme---border-02);border-radius:var(--border-radius-small);color:var(--_theme---text-01);font-weight:700;text-decoration:none}',
+      '.media-player_listen.is-fallback svg{width:1.25rem;height:1.25rem}',
+      '@media (max-width:991px){.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{left:.5rem;right:.5rem;width:auto}}',
+      '@media (max-width:375px){.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{left:0;right:0;border-left:0;border-right:0;border-radius:0}}',
       'html[data-player-navigating] .page-wrapper{cursor:progress}',
-      '.media-player[data-presentation="floating"] [data-inline-only]{display:none}',
-      '.media-player[data-presentation="floating"] .media-player_video{display:none}',
-      /* …except that a YouTube player that is actually playing may not be hidden (API policy): while
-         the video plays it stays above the bar at a legal size; Listen mode or pausing collapses it. */
-      '.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"] .media-player_video,.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"] .media-player_video{display:block;border-radius:var(--border-radius-small)}',
-      '.media-player[data-presentation="floating"] .media-player_bar{background-color:var(--_theme---background-02)}',
-      '.media-player[data-over-sheet]{z-index:1002}',
-      '.media-player[data-presentation="hidden"]{display:none}',
-      '.media-player[data-has-video="false"] .media-player_video{display:none}',
-      '@media (max-width:991px){.media-player[data-presentation="floating"]{left:.5rem;right:.5rem;width:auto;bottom:calc(.5rem + env(safe-area-inset-bottom,0px))}}',
-      /* Narrow phones: only a full-bleed strip keeps a playing video at YouTube\'s 200px minimum. */
-      '@media (max-width:375px){.media-player[data-presentation="floating"][data-mode="watch"][data-status="playing"],.media-player[data-presentation="floating"][data-mode="watch"][data-status="loading"]{left:0;right:0}}',
-      /* Narrow phones, inline: the transport wraps under the title instead of crushing it. */
-      '@media (max-width:479px){.media-player[data-presentation="inline"] .media-player_bar{flex-wrap:wrap}.media-player[data-presentation="inline"] .media-player_controls{flex:1 1 100%;justify-content:flex-end}}',
-      '@keyframes media-player-rise{from{opacity:0;transform:translateY(.75rem)}to{opacity:1;transform:none}}',
-      '.media-player[data-presentation="floating"][data-animate]{animation:media-player-rise 240ms cubic-bezier(.22,1,.36,1)}',
-      '@media (prefers-reduced-motion:reduce){.media-player[data-presentation="floating"][data-animate]{animation:none}}',
-      /* Things that share the bottom edge with the dock move up by its height. */
+      /* Things that share the bottom edge with the bar move up by its height. */
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
       '.media-transcript.is-visible [data-transcript-sync]{bottom:calc(1rem + var(--player-dock-height,0px))}',
       '.media-transcript.is-visible .media-transcript_body{padding-bottom:calc(1.5rem + var(--player-dock-height,0px))}'
@@ -213,14 +207,14 @@
   function build() {
     root = el('div', 'media-player', {
       'data-player': 'root', role: 'region', 'aria-label': 'Sermon player',
-      'data-mode': S.mode, 'data-presentation': 'inline', 'data-status': 'idle',
+      'data-mode': S.mode, 'data-presentation': 'inline', 'data-status': 'idle', 'data-bar': 'off',
       'data-has-video': String(!!videoId), 'data-has-audio': String(!!audioUrl)
     });
     videoBox = el('div', 'media-player_video', { 'data-player': 'video' });
     bar = el('div', 'media-player_bar', { 'data-player': 'bar' });
 
-    // Title + meta line, the way a series-playlist row shows them.
-    els.info = el('div', 'media-player_info', { 'data-player': 'info' });
+    // Title + meta line, the way a series-playlist row shows them. The title goes to the sermon page.
+    els.info = el('div', 'media-player_info', { 'data-player': 'info', role: 'button', tabindex: '0' });
     els.title = el('div', 'text-style-title-small media-player_title', { 'data-player': 'title' });
     els.title.textContent = title;
     els.meta = el('div', 'media-meta media-player_meta');
@@ -239,17 +233,10 @@
     var controls = el('div', 'media-player_controls');
     els.mode = button('mode', 'Switch to audio',
       '<span data-icon="off">' + svg(ICON.listen) + '</span><span data-icon="on">' + svg(ICON.watch) + '</span>',
-      { 'aria-pressed': 'false', 'data-inline-only': '' });
-    els.back = button('back', 'Back ' + SKIP + ' seconds', svg(ICON.back, SKIP_LABEL), { 'data-inline-only': '' });
+      { 'aria-pressed': 'false' });
     els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>', { 'data-size': 'large' });
-    els.forward = button('forward', 'Forward ' + SKIP + ' seconds', svg(ICON.forward, SKIP_LABEL), { 'data-inline-only': '' });
-    els.rate = button('rate', 'Playback speed', '', { 'data-inline-only': '' });
-    els.rate.className += ' media-player_rate';
     if (videoId && audioUrl) controls.appendChild(els.mode);
-    controls.appendChild(els.back);
     controls.appendChild(els.play);
-    controls.appendChild(els.forward);
-    controls.appendChild(els.rate);
 
     // Progress edge: a slider for the keyboard, a strip for a finger.
     els.progress = el('div', 'media-player_progress', {
@@ -259,32 +246,48 @@
     els.fill = el('div', 'media-player_progress_fill');
     els.progress.appendChild(els.fill);
 
+    bar.appendChild(els.progress);
     bar.appendChild(els.info);
     bar.appendChild(controls);
-    bar.appendChild(els.progress);
     root.appendChild(videoBox);
     root.appendChild(bar);
     d.body.appendChild(root);
 
     els.mode.addEventListener('click', function () { api.setMode(S.mode === 'listen' ? 'watch' : 'listen'); });
-    els.back.addEventListener('click', function () { api.skip(-SKIP); });
-    els.forward.addEventListener('click', function () { api.skip(SKIP); });
     els.play.addEventListener('click', function () { api.toggle(); });
-    els.rate.addEventListener('click', function () {
-      var i = RATES.indexOf(S.rate);
-      api.setRate(RATES[(i + 1) % RATES.length]);
-    });
-    // Floating: the title is the way back to the sermon page.
-    els.info.addEventListener('click', function () { if (S.presentation === 'floating') api.expand(); });
+    els.info.addEventListener('click', function () { api.expand(); });
     els.info.addEventListener('keydown', function (e) {
-      if (S.presentation !== 'floating') return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.expand(); }
     });
     root.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && S.presentation === 'floating') { e.preventDefault(); api.close(); }
+      if (e.key === 'Escape' && S.barShown) { e.preventDefault(); api.pause(); }
     });
     scrub();
     paint();
+  }
+
+  /* The "Listen" entry point on the sermon page: joins the "Listen on" Spotify / Apple
+     row as another icon button, or sits after the stage when that row is not there.
+     Pressing it starts the MP3 (and switches a playing video to audio). */
+  function injectListen() {
+    var old = $('[data-player="listen"]');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    els.listen = null;
+    if (!audioUrl) return;
+    var row = $('.media_platform-buttons .horz-flex') || $('.media_platform-buttons');
+    var a = el('a', 'icon-button media-player_listen', {
+      href: '#', role: 'button', 'aria-label': 'Listen here', 'aria-pressed': 'false', 'data-player': 'listen', 'data-player-nav': 'off'
+    });
+    a.innerHTML = svg(ICON.listen) + (row ? '' : '<span>Listen</span>');
+    if (row) row.insertBefore(a, row.firstChild);
+    else { a.className += ' is-fallback'; if (stage && stage.parentNode) stage.parentNode.insertBefore(a, stage.nextSibling); }
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (S.mode === 'listen' && api.isPlaying()) { api.pause(); return; }
+      if (S.mode !== 'listen') api.setMode('listen');
+      if (!api.isPlaying()) api.play();
+    });
+    els.listen = a;
   }
 
   /* The progress edge: pointer scrubbing (seek on release, fill follows the finger) and arrow keys. */
@@ -354,17 +357,22 @@
   function paint() {
     if (!root) return;
     var playing = S.status === 'playing' || S.status === 'loading';
+    S.barShown = playing || !!S.pending;
     root.setAttribute('data-mode', S.mode);
     root.setAttribute('data-status', S.status);
     root.setAttribute('data-presentation', S.presentation);
+    root.setAttribute('data-bar', S.barShown ? 'on' : 'off');
     if (playing) els.play.setAttribute('data-on', ''); else els.play.removeAttribute('data-on');
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    els.play.setAttribute('aria-disabled', String(!(audioUrl || iframe)));
     if (S.mode === 'listen') els.mode.setAttribute('data-on', ''); else els.mode.removeAttribute('data-on');
     els.mode.setAttribute('aria-pressed', String(S.mode === 'listen'));
     els.mode.setAttribute('aria-label', S.mode === 'listen' ? 'Switch to video' : 'Switch to audio');
-    els.rate.textContent = (S.rate === 1 ? '1' : String(S.rate).replace(/^0/, '')) + '×';
-    els.rate.setAttribute('aria-label', 'Playback speed ' + S.rate + '×');
+    if (els.listen) {
+      var listening = S.mode === 'listen' && playing;
+      els.listen.setAttribute('aria-pressed', String(listening));
+      els.listen.setAttribute('aria-label', listening ? 'Pause audio' : 'Listen here');
+    }
+    els.info.setAttribute('aria-label', title + ' — back to the sermon page');
 
     var dur = api.getDuration();
     var t = scrubbing === null ? api.getTime() : scrubbing * dur;
@@ -376,20 +384,10 @@
     els.progress.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
     [els.artist, els.time, els.status].forEach(function (n) { n.toggleAttribute('data-empty', !n.textContent); });
 
-    var floating = S.presentation === 'floating';
-    if (floating) {
-      els.info.setAttribute('role', 'button');
-      els.info.setAttribute('tabindex', '0');
-      els.info.setAttribute('aria-label', title + ' — back to the sermon page');
-    } else {
-      els.info.removeAttribute('role');
-      els.info.removeAttribute('tabindex');
-      els.info.removeAttribute('aria-label');
-    }
-    root.inert = S.presentation === 'hidden';
-    d.body.classList.toggle('has-player-dock', floating);
-    if (floating) {
-      d.documentElement.style.setProperty('--player-dock-height', root.offsetHeight + 'px');
+    bar.inert = !S.barShown;
+    d.body.classList.toggle('has-player-dock', S.barShown);
+    if (S.barShown) {
+      d.documentElement.style.setProperty('--player-dock-height', bar.offsetHeight + 'px');
     } else {
       d.documentElement.style.removeProperty('--player-dock-height');
     }
@@ -626,23 +624,15 @@
   function place() {
     if (!root || !stage || S.presentation !== 'inline') return;
     var r = stage.getBoundingClientRect();
-    root.style.left = Math.round(r.left + w.scrollX) + 'px';
-    root.style.top = Math.round(r.top + w.scrollY) + 'px';
-    root.style.width = Math.round(r.width) + 'px';
-    stage.style.height = root.offsetHeight + 'px';
+    videoBox.style.left = Math.round(r.left + w.scrollX) + 'px';
+    videoBox.style.top = Math.round(r.top + w.scrollY) + 'px';
+    videoBox.style.width = Math.round(r.width) + 'px';
+    stage.style.height = videoBox.offsetHeight + 'px';
     S.anchor = r.top + w.scrollY;
   }
-  var animateTimer = 0;
   function setPresentation(p) {
     if (S.presentation === p) return;
-    if (p === 'floating') {
-      root.style.left = root.style.top = root.style.width = '';
-      root.setAttribute('data-animate', '');
-      clearTimeout(animateTimer);
-      animateTimer = setTimeout(function () { root.removeAttribute('data-animate'); }, 300);
-    } else {
-      root.removeAttribute('data-animate');
-    }
+    if (p === 'floating') videoBox.style.left = videoBox.style.top = videoBox.style.width = '';
     S.presentation = p;
     paint();
     if (p === 'inline') place();
@@ -653,7 +643,7 @@
   // controlled while reading), or there is no stage on this page at all.
   function applyRatio() {
     if (S.sheet || !stage) {
-      if (S.userStarted && S.presentation !== 'floating') setPresentation('floating');
+      if (S.presentation !== 'floating') setPresentation('floating');
       return;
     }
     var ratio = S.ratio;
@@ -680,9 +670,9 @@
       io.observe(stage);
     }
     if ('ResizeObserver' in w) {
-      ro = new ResizeObserver(function () { place(); });
+      ro = new ResizeObserver(function () { place(); paint(); });
       ro.observe(stage);
-      ro.observe(root);
+      ro.observe(bar);
     }
     place();
   }
@@ -859,14 +849,13 @@
         return;
       }
       stage.scrollIntoView({ behavior: reduced.matches ? 'auto' : 'smooth', block: 'center' });
-      var focus = els.play;
-      setTimeout(function () { if (S.presentation === 'floating' && !S.sheet) setPresentation('inline'); focus.focus({ preventScroll: true }); }, reduced.matches ? 0 : 400);
+      setTimeout(function () { if (S.presentation === 'floating' && !S.sheet) setPresentation('inline'); }, reduced.matches ? 0 : 400);
     },
     close: function () {
       api.pause();
       S.dismissed = true;
-      setPresentation('hidden');
       savePosition(true);
+      paint();
     },
     setAudio: function (url) {
       audioUrl = url || null;
@@ -877,6 +866,7 @@
         var controls = $('.media-player_controls', root);
         if (audioUrl && videoId && !els.mode.parentNode) controls.insertBefore(els.mode, controls.firstChild);
         if (!audioUrl && els.mode.parentNode) els.mode.parentNode.removeChild(els.mode);
+        injectListen();
         paint();
       }
     },
@@ -943,6 +933,8 @@
     if (S.mode === 'listen') { ensureAudio(); api.ready = true; }
     if (S.presentation === 'hidden') S.presentation = 'inline';
     attachStage(el);
+    injectListen();
+    if (!videoId) el.style.display = 'none';
     paint();
     emit('ready');
     return true;
@@ -958,6 +950,9 @@
       S.href = location.pathname + location.search;
       readPage();
       attachStage(el);
+      injectListen();
+      if (!videoId) el.style.display = 'none';
+      paint();
       return;
     }
     savePosition(true);
@@ -982,7 +977,7 @@
     var FILE = /\.(pdf|mp3|m4a|wav|zip|jpe?g|png|gif|svg|webp|avif|vtt|txt|csv|xml|rss|json|ics)$/i;
     var KEEP = '.announcement-bar, nav.navbar, [vci-nav="header"], footer.footer, footer';
 
-    function active() { return !!root && S.userStarted && S.presentation !== 'hidden'; }
+    function active() { return !!root && S.barShown; }
     function remember() {
       Array.prototype.forEach.call(d.body.querySelectorAll(':scope > script:not([src])'), function (sc) { seenScripts[sc.textContent] = true; });
       Array.prototype.forEach.call(d.querySelectorAll('style'), function (st) { seenStyles[st.textContent] = true; });
