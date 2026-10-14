@@ -27,6 +27,26 @@
   -webkit-mask-image: none;
   mask-image: none;
 }
+/* Series playlist scroll fades, as on the transcript: a fade at each edge
+   with rows hidden past it, none at an edge the list already reaches (the
+   script marks [data-at-top] / [data-at-bottom]), so a short series that
+   fits shows no fade at all. */
+.media-series_body {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+  mask-image: linear-gradient(to bottom, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+}
+.media-series_body[data-at-top] {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 1.5rem), transparent);
+}
+.media-series_body[data-at-bottom] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 1.5rem);
+  mask-image: linear-gradient(to bottom, transparent, black 1.5rem);
+}
+.media-series_body[data-at-top][data-at-bottom] {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 /* Each playlist row's meta: speakers (a nested Collection List) · divider
    (.meta-divider) · date. The script picks which show by writing
    data-meta="date", "speaker", or "speaker date" on the row; until it has,
@@ -95,6 +115,19 @@
       };
       mark();
       bar.addEventListener('scroll', mark, { passive: true });
+      window.addEventListener('resize', mark);
+    });
+  }
+
+  function listFades() {
+    document.querySelectorAll('.media-series_body').forEach(function (box) {
+      var mark = function () {
+        var max = box.scrollHeight - box.clientHeight;
+        box.toggleAttribute('data-at-top', box.scrollTop <= 1);
+        box.toggleAttribute('data-at-bottom', box.scrollTop >= max - 1);
+      };
+      mark();
+      box.addEventListener('scroll', mark, { passive: true });
       window.addEventListener('resize', mark);
     });
   }
@@ -239,7 +272,7 @@
     });
   }
 
-  function init() { crumbs(); crumbFades(); var s = series(); seriesLink(s ? s.total : 0); }
+  function init() { crumbs(); crumbFades(); var s = series(); seriesLink(s ? s.total : 0); listFades(); }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
