@@ -278,19 +278,23 @@ bar's height.
 any other. The script builds the elements and puts these classes on them;
 it does not style them itself (its only injected CSS is behaviour the panel
 cannot express: attribute states, `:has()`, the progress variable, the
-bumps for the back-to-top button and the transcript sheet). The classes are
-unused by any element in the Designer, so they show under Style Manager
-with no element selected; the quickest way to edit one is to select any
-element, type the class name in the selector field, and change it there, or
-drop a temporary div with the class on a scratch page.
+bumps for the back-to-top button and the transcript sheet). The script builds
+the bar at runtime, so there is no bar element in the Navigator. Instead the
+Media Template carries a **static mockup** of it (the last child of
+`media-content_wrap`, named "Player bar mockup" in the Navigator, marked
+`data-player-mockup`): the same elements with the same classes, so each part
+can be selected and styled on the canvas and the result is what the real bar
+gets. The mockup is Designer-only: the script removes every
+`[data-player-mockup]` element before it builds the real bar, and again after
+each in-place page swap. Do not put anything else inside it.
 
 | Class | What it is |
 | --- | --- |
 | `media-player_bar` | the floating card: fixed, 26rem wide bottom-right on desktop; tablet and below spans the width. Inset `calc(var(--_spacing---gutter) / 2)` on every side. Hidden by default (slid down, transparent). |
 | `media-player_bar is-visible` | the shown state the script toggles while a sermon is active |
 | `media-player_info` | the title + meta column; goes back to the sermon page |
-| `media-player_title` | one line that fades out at the right edge (`mask-image`) instead of ending in `…` |
-| `media-player_meta` | the speaker · time · status line (the items use the site's `media-meta` / `text-style-media-meta` / `meta-divider`) |
+| `text-style-title-small media-player_title` | one line that fades out at the right edge (`mask-image`) instead of ending in `…`. A combo on the site's title style. |
+| `media-meta media-player_meta` | the speaker · time · status line (the items use the site's `text-style-media-meta` / `meta-divider`). A combo on the site's meta style. |
 | `media-player_controls` | the button row |
 | `media-player_btn` | a 2.75rem icon button (Listen/Watch); hover and focus states |
 | `media-player_btn is-play` | play/pause: gold, round, 2px border, the back-to-top shadow, scale on press |
@@ -322,7 +326,8 @@ to the site footer through the Data API; 1.1.0 the same day (bar redesign,
 cross-page playback); 1.2.0 (bottom bar only while playing, Listen button);
 1.3.0 (floating card, no video off-screen, hand-off on leaving the browser);
 1.4.0 (styles moved to Designer classes, title fade, half-gutter inset, no
-re-run of Webflow's per-page bundle on a swap). To ship a change: commit it, then
+re-run of Webflow's per-page bundle on a swap); 1.4.1 (title and meta classes
+as combos, the Designer mockup removed from the live page). To ship a change: commit it, then
 re-register with the new commit's URL and hash and bump the version:
 
 ```sh

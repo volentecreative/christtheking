@@ -143,6 +143,7 @@ test('renders the video over the stage, no bar until something plays, a Listen b
   const { page, ctx, errors, loads } = await open();
   assert.equal(await page.$$eval('[data-player="root"]', (e) => e.length), 1);
   assert.ok(await page.$('body > .media-player > .media-player_video > iframe'), 'the root is a child of body, not of the page content');
+  assert.equal(await page.$$eval('[data-player-mockup], .page-wrapper .media-player_bar', (e) => e.length), 0, 'the Designer mockup of the bar is dropped from the live page');
   const laid = await page.evaluate(() => {
     const s = document.querySelector('.video-embed').getBoundingClientRect(), r = document.querySelector('.media-player_video').getBoundingClientRect();
     return { dx: Math.abs(s.left - r.left), dy: Math.abs(s.top - r.top), dw: Math.abs(s.width - r.width), dh: Math.abs(s.height - r.height) };

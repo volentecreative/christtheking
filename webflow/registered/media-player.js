@@ -37,10 +37,13 @@
  *   over or paused, never kept playing out of view.
  *
  * STYLES  The look lives in Designer classes (style panel): media-player_bar
- *   (+ is-visible), _info, _title, _meta, _controls, _btn (+ is-play, is-close),
- *   _progress, _progress-fill, _video, _listen (+ is-fallback). The script only
- *   injects behaviour CSS (attribute states, :has(), the progress variable, the
- *   dock bumps). webflow/styles/media-player.css is a reference copy.
+ *   (+ is-visible), _info, _title (a combo on text-style-title-small), _meta (a
+ *   combo on media-meta), _controls, _btn (+ is-play, is-close), _progress,
+ *   _progress-fill, _video, _listen (+ is-fallback). The script only injects
+ *   behaviour CSS (attribute states, :has(), the progress variable, the dock
+ *   bumps). webflow/styles/media-player.css is a reference copy. A static
+ *   mockup of the bar sits on the Media Template ([data-player-mockup]) for
+ *   styling on the canvas; the script removes it from the live page.
  *
  * API     window.ctkPlayer — ready, hasVideo, hasAudio, getMode(), getTime(),
  *         getDuration(), isPlaying(), play(), pause(), toggle(), seek(s, {play}),
@@ -1074,6 +1077,7 @@
   }
   // A page was swapped in: the same sermon re-anchors, a different one loads, none leaves the bar floating.
   function adopt() {
+    dropMockups();
     var el = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
     if (!el) { attachStage(null); return; }
     var src = readStage(el);
@@ -1280,8 +1284,17 @@
 
   /* ---------- init ---------- */
   var booted = false;
+  // The Media Template carries a static copy of the bar ([data-player-mockup]) so its classes
+  // can be styled on the Designer canvas. It is never part of the live page: drop it before
+  // the real bar is built, and again after every in-place swap brings a fresh copy in.
+  function dropMockups() {
+    var m = d.querySelectorAll('[data-player-mockup]');
+    for (var i = 0; i < m.length; i++) m[i].parentNode.removeChild(m[i]);
+  }
+
   function init() {
     if (booted) return true;
+    dropMockups();
     var el = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
     if (!el) return false;
     booted = true;
