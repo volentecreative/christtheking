@@ -149,6 +149,12 @@
   .media-transcript_body {
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 1rem, black calc(100% - 1rem), transparent);
   }
+  /* No top fade until there's something above to fade: at the very top the
+     first line reads in full ([data-at-top], set by the script). */
+  .media-transcript_body[data-at-top] {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1rem), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 1rem), transparent);
+  }
   /* Synchronize (.media-transcript_sync, hidden in the style panel). */
   [data-transcript-sync][data-show] {
     display: block;
@@ -182,6 +188,10 @@
          bottom one. */
       -webkit-mask-image: linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 4.5rem), transparent);
       mask-image: linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 4.5rem), transparent);
+    }
+    .media-secondary:not(.is-visible) .media-transcript_body[data-at-top] {
+      -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 4.5rem), transparent);
+      mask-image: linear-gradient(to bottom, black calc(100% - 4.5rem), transparent);
     }
     /* "Expand" (.media-transcript_expand-pill, hidden in the style panel):
        tells the preview apart from a scrollable box, and opens the drawer. */
@@ -387,6 +397,9 @@
         showSync();
       }
       if (body) {
+        var atTop = function () { body.toggleAttribute('data-at-top', body.scrollTop < 2); };
+        atTop();
+        body.addEventListener('scroll', atTop, { passive: true });
         body.addEventListener('scroll', letGo, { passive: true });
         // A finger or wheel on the box is always the reader, even mid-animation.
         ['wheel', 'touchstart'].forEach(function (ev) {
