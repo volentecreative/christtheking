@@ -260,32 +260,34 @@ No renames, no URL changes, no change to `youtube-video-id` as the key.
 
 ### C.1 Where it lives
 
-A new **narthex module `player`** (`vci-player` attributes, `vci.player` API,
-`vci:player:*` events), released as narthex v0.6.0, with the CTK-specific
-wiring (CMS field bindings, transcript follow-along, dock markup) in the
-site. Reasons: it is attribute-driven state management with no styling, the
-exact thing narthex exists for; a sermon player is the second-most likely
-thing to be rebuilt on the next church site; and it keeps the site's custom
-code a consumer, as the transcript embed already is for `vci.modal`.
+**In christtheking, not narthex** (decided 2026-10-14). The player ships as a
+site registered script, `webflow/registered/media-player.js`, applied
+site-wide in the footer like `scrollToTop` and `navbarSpeakerNames`, with
+its source of truth in this repo. It still follows narthex's conventions
+(attribute hooks, state not style, events for site code) and uses narthex
+core where loaded (`vci.emit`, `vci.css`, `vci.modal.isOpen('transcript')`),
+but it owns its own markup hooks under a `data-player-*` prefix, matching the
+site's other registered scripts, and it is not versioned or released through
+jsDelivr. The transcript embed becomes a consumer of its events.
 
 ### C.2 Roles and settings (sketch)
 
 ```
-vci-player="stage"        the inline slot (.video-embed): a 16:9 placeholder that stays in the page
-vci-player="root"         the single persistent container that owns the iframe and <audio>; one per page
-vci-player="dock"         the floating chrome (controls, title, status) — part of root
-vci-player="play|mode|expand|close|back|forward|speed|title|status|time"   controls inside root or the transcript sheet
+data-player="stage"        the inline slot (.video-embed): a 16:9 placeholder that stays in the page
+data-player="root"         the single persistent container that owns the iframe and <audio>; one per page
+data-player="dock"         the floating chrome (controls, title, status) — part of root
+data-player="play|mode|expand|close|back|forward|speed|title|status|time"   controls inside root or the transcript sheet
 
-vci-player-youtube="<id>"      bound to CMS youtube-video-id on the stage
-vci-player-audio="<url>"       bound to CMS audio-url on the stage
-vci-player-offset="<s>"        bound to audio-offset-seconds
-vci-player-title / -artist / -artwork   Media Session metadata (title, speaker-text, thumbnail)
-vci-player-float="(max-visibility 0.3)"-style threshold, -dock-class, -inline-class, -remember="true"
+data-player-youtube="<id>"      bound to CMS youtube-video-id on the stage (today: data-youtube-id)
+data-player-audio="<url>"       bound to CMS audio-url on the stage
+data-player-offset="<s>"        bound to audio-offset-seconds
+data-player-title / -artist / -artwork   Media Session metadata (title, speaker-text, thumbnail)
 ```
 
-Events: `vci:player:ready`, `:play`, `:pause`, `:time` (throttled, one
-source of truth for the transcript), `:mode` (watch|listen), `:float`,
-`:inline`, `:error`, `:handoff` (experimental).
+Events on `document`: `ctk:player:ready`, `:play`, `:pause`, `:time`
+(throttled, one source of truth for the transcript), `:mode` (watch|listen),
+`:float`, `:inline`, `:error`, `:handoff` (experimental). API on
+`window.ctkPlayer`: `play() pause() seek(s) setMode(m) getTime()`.
 
 ### C.3 Playback state (one object, one owner)
 
@@ -405,8 +407,9 @@ CSS only, keyed on the dock class:
   transcript sheet or a drawer is open the dock hides (the sheet already
   carries play/pause and will now also carry the mode switch).
 - Dock markup lives in the site's `footer` component (so it exists on every
-  page) with `vci-player` roles; narthex only toggles classes, `aria-*`,
-  `inert` and CSS variables, per its rules.
+  page) with `data-player` roles; the script only toggles classes, `aria-*`,
+  `inert` and CSS variables, and injects only the CSS a state needs (the
+  fixed geometry), never colours or sizes.
 
 ### C.10 Native and Document PiP
 
@@ -544,17 +547,18 @@ Risk: GUIDs not preserved → re-match by duration (already tested at 143
 episodes); publishing lag → Watch-only items, handled by the player.
 Phase 1b (optional): `--create-audio-only` with grace window.
 
-### Phase 2 — Player core (narthex v0.6.0 + CTK wiring, 2 PRs)
+### Phase 2 — Player core (christtheking, 1–2 PRs)
 
-narthex: `src/modules/player.js` (state, adapters, inline/floating geometry,
-switching, Media Session, preferences, Watch-only / Listen-only, error and
-loading states, keyboard and `aria` on every control), demo page block,
-smoke tests (Playwright can stub the IFrame API and use a short local MP3).
-CTK: template attributes bound to CMS fields, poster + Play button on the
-stage, dock markup in the footer component styled with existing tokens,
-transcript embed refactored to consume `vci:player:time` and call
-`vci.player.seek()` instead of owning `YT.Player`, scroll-to-top offset,
-footer tag bump to `@v0.6`.
+`webflow/registered/media-player.js` (state, adapters, inline/floating
+geometry, switching, Media Session, preferences, Watch-only / Listen-only,
+error and loading states, keyboard and `aria` on every control), browser
+tests in `test/*.test.mjs` against fixtures shaped like the template
+(Playwright stubs the IFrame API and uses a short local MP3), registered and
+applied site-wide via the Data API like the other registered scripts.
+Designer: template attributes bound to CMS fields, poster + Play button on
+the stage, dock markup in the footer component styled with existing tokens.
+Transcript embed refactored to consume `ctk:player:time` and call
+`ctkPlayer.seek()` instead of owning `YT.Player`; scroll-to-top offset.
 Depends on Phase 1 only for Libsyn URLs; works today against Subsplash URLs.
 Acceptance: see §G; plus no YouTube policy violation (no overlays, ≥ 200 px,
 no background play).
@@ -614,10 +618,39 @@ Manual device matrix (each phase's acceptance):
 
 ## H. Open questions for Josh
 
-1. Libsyn feed URL, and whether the import is complete and GUIDs preserved.
+1. ~~Libsyn feed URL~~ — received; see §I. GUIDs preserved, one episode missing.
 2. When Subsplash hosting ends (the 140 current `audio-url` values depend on it).
 3. Are Apple/Spotify already repointed? (Apple still serves the Subsplash feed.)
 4. Dock markup in the footer component vs generated by the site script — the
-   plan assumes the Designer owns the markup, per narthex's rules.
-5. narthex module (reusable, versioned) vs CTK-only registered script.
+   plan assumes the Designer owns the markup.
+5. ~~narthex module vs CTK-only registered script~~ — decided: christtheking.
 6. Is "Conference Session" meant to be classified by the sync, or stay manual?
+7. Should the missing episode ("Exhortation - Love One Another", 2026-04-12)
+   be re-imported into Libsyn?
+
+---
+
+## I. Addendum 2026-10-14 — Libsyn feed verified
+
+Feed: `http://feeds.libsyn.com/632508/rss` → 301 →
+`https://rss.libsyn.com/shows/632508/destinations/5582368.xml` (the script
+should store the final URL). Compared against the Subsplash snapshot taken
+the same day:
+
+| Check | Result |
+| --- | --- |
+| Items | **146** in Libsyn vs 147 in Subsplash — the archive is already past the 100 default, so the episode limit is set correctly today. One episode did not import: *Exhortation - Love One Another*, 2026-04-12, GUID `c3b55365…`. |
+| GUIDs | **146 / 146 preserved** (Libsyn wraps them in CDATA; the parser must strip it). Phase 1 is therefore a GUID lookup for 140 CMS items, with the duration matcher as fallback only. |
+| Durations | Libsyn = Subsplash **+ 1 s on every episode**, which puts Libsyn's `itunes:duration` within 0–1 s of the YouTube duration. The matcher's 3 s slack still holds. |
+| Titles | 137 identical; 9 differ only by curly → straight apostrophes. `itunes:title` always equals `title`. Shapes: 82 `Speaker - Title`, 63 `Exhortation - Title`, 1 bare title. |
+| `itunes:author` | Present on every episode and names the preacher **including exhortations** (Andy Naselli 62, Nathan Colestock 25, Dustin Williams 14, Andrew Wittenburg 10, Clint Manley 8, Thomas Dodds 8, Cole Johnson 5, …). Today the sync can only backfill speakers from a title prefix, so exhortations stay unattributed; `itunes:author` fixes that, through the existing `findSpeaker()` nickname matching. |
+| Descriptions | Empty on 145 / 146 (one has a Google Doc link). Nothing to ingest. |
+| Dates | Identical to Subsplash (Sunday 10:00 UTC). |
+| Enclosures | `https://traffic.libsyn.com/secure/<show-uuid>/<file>.mp3?dest-id=5582368`, `audio/mpeg`. Each request 302s to a short-lived signed `content.libsyn.com` URL. The stable `traffic.libsyn.com` URL is what goes in `audio-url`; never store the signed one. |
+| Playback headers | Final response: `accept-ranges: bytes`, `206` on a Range request, `access-control-allow-origin: *`. Seeking, `preload="metadata"`, and the handoff's seek-ahead all work; CORS is not an obstacle. |
+| Video link | No YouTube or video field in the feed; only `<link>` to the Libsyn episode page. Association stays on our side (GUID ↔ `youtube-video-id` in the CMS). |
+
+Consequences for Phase 1: add `itunes:author` → `speaker-s` backfill (blank
+field only, matching speaker record required, as today); report the one
+missing episode; the duration matcher is fallback only.
+
