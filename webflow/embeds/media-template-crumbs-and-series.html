@@ -7,12 +7,34 @@
    beside the "All 16 →" link instead of being squeezed letter by letter. */
 .media-series_playlist .media-transcript_header > .horz-flex { flex-wrap: wrap; min-width: 0; }
 .media-series_playlist .media-transcript_header > .horz-flex > h3 { white-space: nowrap; }
+/* Breadcrumb overflow fades: one at each edge with crumbs hidden past it,
+   none at an edge the crumbs already reach (the script marks
+   [data-at-start] / [data-at-end]). Replaces the style panel's right-only
+   fade. */
+.breadcrumb {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+  mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+}
+.breadcrumb[data-at-start] {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+}
+.breadcrumb[data-at-end] {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 2rem);
+  mask-image: linear-gradient(to right, transparent, black 2rem);
+}
+.breadcrumb[data-at-start][data-at-end] {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+/* Each row's speakers (a nested Collection List) are data for the script. */
+[data-series-speakers] { display: none; }
 </style>
 <script>
 /* ===========================================================================
    Media item page. Two jobs, both of which the style panel genuinely can't do.
 
-   1. Breadcrumb filter links. Each crumb's label comes from a CMS field and the
+   1. Breadcrumb filter links (and its overflow fades, below). Each crumb's label comes from a CMS field and the
       href is built from it, so a new Type option or Media Series links to the
       right filter with no per-item filter-URL field. Webflow cannot concatenate
       a query string, and an Option field cannot be bound to a link at all.
@@ -25,6 +47,10 @@
       [data-series-next]), and hides the date-order nav ([data-date-nav],
       Finsweet previous-item / next-item) when the item is in a series. The
       current row gets .is-active and is centred in the playlist's scroll box.
+      Under each title: the date while one speaker gives the whole series; once
+      speakers differ, the speaker - with the date too, unless the series
+      happened within a week (a conference), where the date tells talks apart
+      no better than the number does.
    Source of truth: webflow/embeds/media-template-crumbs-and-series.html in the repo.
    =========================================================================== */
 (function () {
@@ -45,6 +71,19 @@
       crumb.href = value
         ? '/media?' + field + '_equal=' + encodeURIComponent(value)
         : '/media';
+    });
+  }
+
+  function crumbFades() {
+    document.querySelectorAll('.breadcrumb').forEach(function (bar) {
+      var mark = function () {
+        var max = bar.scrollWidth - bar.clientWidth;
+        bar.toggleAttribute('data-at-start', bar.scrollLeft <= 1);
+        bar.toggleAttribute('data-at-end', bar.scrollLeft >= max - 1);
+      };
+      mark();
+      bar.addEventListener('scroll', mark, { passive: true });
+      window.addEventListener('resize', mark);
     });
   }
 
@@ -84,14 +123,42 @@
       if (dated && !isNaN(now)) items.forEach(function (it) { if (it.time < now) index++; });
     }
 
+    /* Speaker or date under each title (see the header). */
+    var who = function (it) {
+      return Array.prototype.map.call(it.row.querySelectorAll('[data-series-speakers] .w-dyn-item'), function (n) {
+        return n.textContent.trim();
+      }).filter(Boolean).join(', ');
+    };
+    var names = items.map(who);
+    var mine = Array.prototype.map.call(document.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) {
+      return n.textContent.trim();
+    }).filter(Boolean).join(', ');
+    var mixed = names.concat(listed ? [] : [mine]).filter(function (n, i, all) {
+      return n && all.indexOf(n) === i;
+    }).length > 1;
+    if (mixed) {
+      var times = items.map(function (it) { return it.time; });
+      var event = dated && Math.max.apply(null, times) - Math.min.apply(null, times) <= 7 * 864e5;
+      items.forEach(function (it, n) {
+        var when = it.row.querySelector('[data-series-date]');
+        if (!when || !names[n]) return;
+        when.textContent = event ? names[n] : names[n] + ' \u00b7 ' + when.textContent.trim();
+      });
+    }
+
     items.forEach(function (it, n) {
       var label = it.row.querySelector('[data-series-index]');
       if (label) label.textContent = pad((listed || n < index ? n : n + 1) + 1);
     });
 
+    /* Show the rows newest first, in number order. The Collection List sorts by
+       date only, so talks given on the same day (a conference) come out
+       oldest first among themselves - 06, 07, 01, 02... - and need re-laying. */
+    if (dated) items.slice().reverse().forEach(function (it) { it.row.parentNode.appendChild(it.row); });
+
     /* The row being watched gets .is-active - the site's active-item pattern,
-       as on the jump menu's .sticky-menu-nav-item.is-active: gold 2px border,
-       surface background, gold text (style panel) - and is scrolled to the
+       as on the jump menu's .sticky-menu-nav-item.is-active: surface
+       background and gold text, no border (style panel) - and is scrolled to the
        middle of the playlist box. The box is scrolled directly - scrollIntoView would move the whole page too. */
     if (listed) {
       var row = items[index].row;
@@ -163,7 +230,7 @@
     });
   }
 
-  function init() { crumbs(); var s = series(); seriesLink(s ? s.total : 0); }
+  function init() { crumbs(); crumbFades(); var s = series(); seriesLink(s ? s.total : 0); }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

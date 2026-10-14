@@ -2,10 +2,13 @@
      (last child, after .media-transcript_body). Source of truth for that embed.
      Transcript rows, the playing-row mark, follow-along, the YouTube link-up, and
      the transcript tools: search, copy, download; expand / play-pause / close on
-     tablet/phone. There the transcript is an inline 22rem box (follows the
-     sermon while it plays) whose expand button opens the same box as a bottom
-     sheet: .media-secondary is a narthex drawer (vci-modal="drawer", key
-     "transcript", inline at 992px+), .media-transcript its sheet part. -->
+     tablet/phone. There the page shows a read-only preview box
+     (.media-transcript.is-preview [data-transcript-preview], under the title)
+     whose Expand buttons open the full transcript as a bottom sheet:
+     .media-secondary is a narthex drawer (vci-modal="drawer", key "transcript",
+     inline at 992px+), .media-transcript its sheet part. The preview's rows
+     are a copy of the sheet's, made here, so the two are separate elements and
+     the sheet can slide away on close while the box stays put. -->
 <style>
   [data-t-row] {
     display: grid;
@@ -140,10 +143,21 @@
     white-space: nowrap;
   }
   /* Header buttons by context. Desktop card: search, copy, download.
-     Tablet/phone box: + expand (.modal_close.is-expand, style panel).
+     Tablet/phone preview box: title + expand (.modal_close.is-expand).
      Sheet: + play/pause and close (.modal_close.is-sheet-only, hidden in the
-     style panel, shown here while open), no expand. The scrim
+     style panel, shown here while open). The scrim
      (.media-transcript_scrim) is hidden in the style panel too. */
+  /* Safari still wants the prefixed property for the style panel's
+     top/bottom fade on the scroll area. */
+  .media-transcript_body {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 1rem, black calc(100% - 1rem), transparent);
+  }
+  /* No top fade until there's something above to fade: at the very top the
+     first line reads in full ([data-at-top], set by the script). */
+  .media-transcript_body[data-at-top] {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1rem), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 1rem), transparent);
+  }
   /* Synchronize (.media-transcript_sync, hidden in the style panel). */
   [data-transcript-sync][data-show] {
     display: block;
@@ -157,26 +171,39 @@
     display: block;
   }
   @media (max-width: 991px) {
-    .media-transcript.is-visible [data-transcript-expand] {
-      display: none;
-    }
     .media-secondary.is-visible > [vci-modal='scrim'] {
       display: block;
     }
     .media-transcript.is-visible {
       padding-bottom: env(safe-area-inset-bottom);
     }
-    /* Collapsed, the box is a read-only preview: it follows the sermon by
-       itself and lets swipes pass through to the page. Open it as the drawer
-       to scroll and read freely. */
-    .media-secondary:not(.is-visible) .media-transcript_body {
+    /* The preview box is read-only: it follows the sermon by itself and lets
+       swipes pass through to the page. Open the sheet to scroll and read. */
+    [data-transcript-preview] .media-transcript_body {
       overflow: hidden;
+      cursor: pointer;
+      /* Deeper fades than the 1rem set in the style panel: the spoken
+         sentence sits just under the top one, and the Expand pill over the
+         bottom one. */
+      -webkit-mask-image: linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 4.5rem), transparent);
+      mask-image: linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 4.5rem), transparent);
+    }
+    [data-transcript-preview] .media-transcript_body[data-at-top] {
+      -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 4.5rem), transparent);
+      mask-image: linear-gradient(to bottom, black calc(100% - 4.5rem), transparent);
+    }
+    /* "Expand" (.media-transcript_expand-pill, hidden in the style panel):
+       tells the preview apart from a scrollable box, and opens the sheet. */
+    [data-transcript-preview] [data-transcript-expand-pill] {
+      display: block;
     }
     /* Reading text one step brighter (text-02) than the desktop card's. */
-    .media-secondary [data-t-row] {
+    .media-secondary [data-t-row],
+    [data-transcript-preview] [data-t-row] {
       color: var(--_theme---text-02);
     }
-    .media-secondary [data-t-row][data-t-active] {
+    .media-secondary [data-t-row][data-t-active],
+    [data-transcript-preview] [data-t-row][data-t-active] {
       color: var(--_theme---text-01);
     }
   }
@@ -275,20 +302,6 @@
       }
     }
 
-    /* The sheet and the inline box are the same element, so the sheet has
-       no exit slide (vci-modal-exit="none" on .media-secondary): an exit
-       animation would leave the box's place empty until it finished. On
-       close it drops straight back into the box with a short settle. */
-    d.addEventListener('vci:modal:close', function (e) {
-      if (!e.detail || e.detail.key !== 'transcript' || reduced.matches) return;
-      var tr = $('.media-transcript');
-      if (!tr || !tr.animate) return;
-      tr.animate([{ opacity: 0, transform: 'translateY(0.75rem)' }, { opacity: 1, transform: 'none' }], {
-        duration: 240,
-        easing: 'cubic-bezier(.22, 1, .36, 1)',
-      });
-    });
-
     /* Split a row's text into sentences and give each an estimated start,
        spread between this timestamp and the next by length (the last row
        assumes about 14 characters a second). Only plain-text rows are split. */
@@ -350,26 +363,51 @@
          the box as it starts. Scrolling it yourself while it plays lets go of it and
          shows "Synchronize" at the bottom of the box; tapping that (or a
          timestamp) snaps back and follows again. */
-      var body = $('.media-transcript_body');
+      var body = $('.media-secondary .media-transcript_body');
       var syncWrap = $('[data-transcript-sync]');
       var syncBtn = syncWrap && syncWrap.querySelector('a, button');
       var row = null, sent = null, followed = null, synced = true, ownScrollUntil = 0;
       var mobile = matchMedia('(max-width: 991px)');
-      var host = $('.media-transcript');
+      var sheet = $('.media-secondary .media-transcript');
       function playing() { var st = state(); return st === 1 || st === 3; }
-      // The collapsed mobile box: a preview the reader can't scroll.
-      function preview() { return mobile.matches && !(host && host.classList.contains('is-visible')); }
+      // Tablet/phone with the sheet shut: the full transcript isn't on screen.
+      function shut() { return mobile.matches && !(sheet && sheet.classList.contains('is-visible')); }
       function showSync() {
-        if (syncWrap) syncWrap.toggleAttribute('data-show', !synced && playing() && !preview());
+        if (syncWrap) syncWrap.toggleAttribute('data-show', !synced && playing() && !shut());
       }
       function letGo() {
-        if (preview()) return;
+        if (shut()) return;
         // Scroll events from our own smooth scroll keep extending its window.
         if (Date.now() < ownScrollUntil) { ownScrollUntil = Date.now() + 150; return; }
         if (!playing()) return;
         synced = false;
         showSync();
       }
+      /* The preview box: a copy of the transcript, made after the rows and
+         sentences above are marked up, with its own playing-row and
+         sentence marks mirrored from the sheet's. */
+      var pbody = $('[data-transcript-preview] .media-transcript_body');
+      if (pbody && body) {
+        Array.prototype.forEach.call(body.children, function (c) {
+          var k = c.cloneNode(true);
+          k.removeAttribute('data-transcript');
+          pbody.appendChild(k);
+        });
+        var srcRows = Array.prototype.slice.call(body.querySelectorAll('[data-t-row]'));
+        var srcSents = Array.prototype.slice.call(body.querySelectorAll('[data-t-s]'));
+        var cpRows = pbody.querySelectorAll('[data-t-row]');
+        var cpSents = pbody.querySelectorAll('[data-t-s]');
+        cues.forEach(function (c) {
+          c.copy = cpRows[srcRows.indexOf(c.row)] || null;
+          c.sents.forEach(function (x) { x.copy = cpSents[srcSents.indexOf(x.el)] || null; });
+        });
+      }
+      [body, pbody].forEach(function (el) {
+        if (!el) return;
+        var atTop = function () { el.toggleAttribute('data-at-top', el.scrollTop < 2); };
+        atTop();
+        el.addEventListener('scroll', atTop, { passive: true });
+      });
       if (body) {
         body.addEventListener('scroll', letGo, { passive: true });
         // A finger or wheel on the box is always the reader, even mid-animation.
@@ -378,7 +416,7 @@
         });
       }
       function follow(el, force) {
-        if (!body || !el || (!synced && !force)) return;
+        if (!body || !el || (!synced && !force) || shut()) return;
         var search = $('[data-transcript-search]');
         if (!force && search && search.hasAttribute('data-open')) return;
         var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
@@ -388,18 +426,43 @@
         ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
         body.scrollTo({ top: target, behavior: reduced.matches ? 'auto' : 'smooth' });
       }
-      // Preview: keep the spoken sentence in view, nudging it to the top of
-      // the box once it runs past the bottom.
-      function reveal(el) {
-        if (!body || !el || Date.now() < ownScrollUntil) return;
-        var search = $('[data-transcript-search]');
-        if (search && search.hasAttribute('data-open')) return;
-        var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
-        // Clear of the 1rem fades at the box's top and bottom edges.
-        if (er.top >= br.top + 12 && er.bottom <= br.bottom - 16) return;
-        ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
-        body.scrollTo({ top: Math.max(0, body.scrollTop + er.top - br.top - 16), behavior: reduced.matches ? 'auto' : 'smooth' });
+      // Preview: each spoken sentence slides up to sit just under the
+      // box's 2.5rem top fade.
+      var pinned = null;
+      function pin(el) {
+        if (!pbody || !el || el === pinned) return;
+        var er = el.getBoundingClientRect(), br = pbody.getBoundingClientRect();
+        if (!br.height) return;
+        pinned = el;
+        var target = Math.max(0, pbody.scrollTop + er.top - br.top - 44);
+        if (Math.abs(target - pbody.scrollTop) < 4) return;
+        pbody.scrollTo({ top: target, behavior: reduced.matches ? 'auto' : 'smooth' });
       }
+      // The preview isn't scrollable, so a tap on it (or on its Expand
+      // pill) opens the sheet rather than seeking.
+      var openBtn = $('[data-transcript-expand]');
+      var pill = $('[data-transcript-expand-pill]');
+      function openSheet(e) {
+        if (!openBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openBtn.click();
+      }
+      if (pbody) pbody.addEventListener('click', openSheet, true);
+      if (pill) pill.addEventListener('click', openSheet, true);
+      // Opening the sheet: start it at the playing section, without a glide.
+      d.addEventListener('vci:modal:open', function (e) {
+        if (!e.detail || e.detail.key !== 'transcript' || !body) return;
+        synced = true;
+        followed = row;
+        showSync();
+        if (!row) return;
+        requestAnimationFrame(function () {
+          var er = row.getBoundingClientRect(), br = body.getBoundingClientRect();
+          ownScrollUntil = Date.now() + 150;
+          body.scrollTop = Math.max(0, body.scrollTop + er.top - br.top - 8);
+        });
+      });
       function resync() {
         synced = true;
         showSync();
@@ -415,6 +478,8 @@
         c.row.addEventListener('click', function () { synced = true; showSync(); });
       });
 
+      var prevRow = null, prevNow = null;
+      function mark(el, name, on) { if (el) el.toggleAttribute(name, on); }
       setInterval(function () {
         if (!player || !ready || !player.getCurrentTime) return;
         var t = player.getCurrentTime(),
@@ -432,24 +497,26 @@
           if (row) row.removeAttribute('data-t-active');
           row = act ? act.row : null;
           if (row) row.setAttribute('data-t-active', '');
+          mark(prevRow, 'data-t-active', false);
+          prevRow = act ? act.copy : null;
+          mark(prevRow, 'data-t-active', true);
         }
         var el = now ? now.el : null;
         if (el !== sent) {
           if (sent) sent.removeAttribute('data-t-now');
           sent = el;
           if (sent) sent.setAttribute('data-t-now', '');
+          mark(prevNow, 'data-t-now', false);
+          prevNow = now ? now.copy : null;
+          mark(prevNow, 'data-t-now', true);
         }
-        // Move only when a new timestamped section starts, bringing it to the
-        // top of the box; within a section the box stays still and only the
-        // sentence highlight moves.
-        if (preview()) {
-          // Always in step, playing or not, so it matches wherever the
-          // drawer was left or the video was seeked to.
-          synced = true;
-          var fits = row && sent && sent.getBoundingClientRect().bottom - row.getBoundingClientRect().top <= body.clientHeight - 24;
-          if (row && row !== followed && (fits || !sent)) { followed = row; follow(row, true); }
-          else { followed = row; reveal(sent); }
-        } else if (state() === 1 && synced && row && row !== followed) {
+        // The preview keeps in step, playing or not, so it matches wherever
+        // the sheet was left or the video was seeked to.
+        pin(prevNow || prevRow);
+        // The sheet moves only when a new timestamped section starts,
+        // bringing it to the top; within a section the box stays still and
+        // only the sentence highlight moves.
+        if (state() === 1 && synced && row && row !== followed) {
           followed = row;
           follow(row);
         }
@@ -461,7 +528,7 @@
     /* ---------- copy · download · search ---------- */
     function tools() {
       var rt = $('[data-transcript]');
-      var body = $('.media-transcript_body');
+      var body = $('.media-secondary .media-transcript_body');
       var bar = $('[data-transcript-tools]');
       if (!rt || !body || !bar) return;
       var hasText = !!rt.textContent.trim();
