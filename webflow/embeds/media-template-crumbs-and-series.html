@@ -89,6 +89,11 @@
       if (label) label.textContent = pad((listed || n < index ? n : n + 1) + 1);
     });
 
+    /* Show the rows newest first, in number order. The Collection List sorts by
+       date only, so talks given on the same day (a conference) come out
+       oldest first among themselves - 06, 07, 01, 02... - and need re-laying. */
+    if (dated) items.slice().reverse().forEach(function (it) { it.row.parentNode.appendChild(it.row); });
+
     /* The row being watched gets .is-active - the site's active-item pattern,
        as on the jump menu's .sticky-menu-nav-item.is-active: surface
        background and gold text, no border (style panel) - and is scrolled to the
