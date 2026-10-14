@@ -395,9 +395,10 @@
         var search = $('[data-transcript-search]');
         if (search && search.hasAttribute('data-open')) return;
         var er = el.getBoundingClientRect(), br = body.getBoundingClientRect();
-        if (er.top >= br.top && er.bottom <= br.bottom - 4) return;
+        // Clear of the 1rem fades at the box's top and bottom edges.
+        if (er.top >= br.top + 12 && er.bottom <= br.bottom - 16) return;
         ownScrollUntil = Date.now() + (reduced.matches ? 150 : 1000);
-        body.scrollTo({ top: Math.max(0, body.scrollTop + er.top - br.top - 8), behavior: reduced.matches ? 'auto' : 'smooth' });
+        body.scrollTo({ top: Math.max(0, body.scrollTop + er.top - br.top - 16), behavior: reduced.matches ? 'auto' : 'smooth' });
       }
       function resync() {
         synced = true;
@@ -445,7 +446,7 @@
           // Always in step, playing or not, so it matches wherever the
           // drawer was left or the video was seeked to.
           synced = true;
-          var fits = row && sent && sent.getBoundingClientRect().bottom - row.getBoundingClientRect().top <= body.clientHeight - 12;
+          var fits = row && sent && sent.getBoundingClientRect().bottom - row.getBoundingClientRect().top <= body.clientHeight - 24;
           if (row && row !== followed && (fits || !sent)) { followed = row; follow(row, true); }
           else { followed = row; reveal(sent); }
         } else if (state() === 1 && synced && row && row !== followed) {
