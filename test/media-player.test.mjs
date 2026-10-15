@@ -156,7 +156,10 @@ test('renders the video over the stage, no bar until something plays, a Listen b
   assert.equal(bar.visibility, 'hidden', 'no bar while nothing plays');
   assert.equal(bar.position, 'fixed');
   assert.equal(bar.inert, true);
-  assert.equal(await page.$eval('.media-player_bar [data-player="mode"]', (b) => !!b), true, 'Listen/Watch lives in the bar');
+  assert.equal(await page.$('[data-player="mode"]'), null, 'no Listen/Watch on the bar: the page\'s Listen button and setMode() switch sources');
+  assert.deepEqual(await page.$$eval('[data-player="bar"] > .media-player_info > *', (n) => n.map((e) => e.className)), ['text-style-title-small media-player_title', 'media-player_time'], 'the mockup\'s tree: title over the time row');
+  assert.deepEqual(await page.$$eval('.media-player_time > *', (n) => n.map((e) => e.getAttribute('data-player'))), ['time', 'progress', 'duration'], 'elapsed · progress · duration');
+  assert.deepEqual(await page.$$eval('.media-player_controls > *', (n) => n.map((e) => e.tagName.toLowerCase() + '.' + e.className.replace(/ /g, '.'))), ['button.media-player_btn.is-play', 'a.icon-button'], 'play/pause and the site\'s icon-button close');
   assert.equal(await page.$eval('.media_platform-buttons .horz-flex > a:first-child', (a) => a.getAttribute('data-player') + ' ' + a.className), 'listen icon-button media-player_listen', 'Listen joins the Spotify / Apple row, first');
   assert.equal(await page.$('[data-player="back"], [data-player="forward"], [data-player="rate"]'), null, 'no skip or speed buttons');
   assert.equal(await page.evaluate(() => document.querySelectorAll('iframe').length), 1);
@@ -174,7 +177,8 @@ test('the bar appears on play, stays while paused, and goes away when closed', a
   assert.ok(on.bottom === 16 && on.right === 16 && on.left > 16 && on.width <= 420, `a floating card in the corner, inset by half the gutter ${JSON.stringify(on)}`);
   assert.equal(on.border, '2px solid'); assert.equal(on.radius, '8px');
   assert.match(on.dock, /^\d+px$/); assert.equal(on.body, true);
-  assert.equal(await page.$eval('[data-player="speaker"]', (e) => e.textContent), 'Doug Wilson');
+  assert.equal(await page.$eval('[data-player="duration"]', (e) => e.textContent), '1:00:00');
+  assert.equal(await page.$('[data-player="speaker"]'), null, 'no speaker on the bar');
   await page.click('.media-player_bar [data-player="play"]');
   await page.waitForFunction(() => ctkPlayer.getStatus() === 'paused');
   await page.waitForTimeout(300);
@@ -398,18 +402,18 @@ test('Watch → Listen keeps the position and speed; Listen → Watch comes back
   await play(page);
   await page.waitForFunction(() => ctkPlayer.isPlaying());
   await page.evaluate(() => { ctkPlayer.setRate(1.25); __yt.t = 42; });
-  await page.click('.media-player_bar [data-player="mode"]');
+  await page.evaluate(() => ctkPlayer.setMode('listen'));
   await page.waitForFunction(() => ctkPlayer.getMode() === 'listen' && ctkPlayer.getStatus() === 'playing');
   let s = await state(page);
   assert.ok(Math.abs(s.time - 42) < 2, `audio took over near 42s (got ${s.time})`);
   assert.equal(s.yt.state, 2, 'YouTube paused once the audio was playing');
   assert.equal(s.yt.muted, false, 'and unmuted again for later');
   assert.equal(s.rate, 1.25);
-  assert.equal(await page.$eval('[data-player="mode"]', (b) => b.getAttribute('aria-pressed')), 'true');
+  assert.equal(await page.$eval('[data-player="listen"]', (b) => b.getAttribute('aria-pressed')), 'true', 'the page\'s Listen button shows the state');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('ctk-player:prefs')).mode), 'listen');
   assert.equal(await page.$eval('.media-player_video', (v) => getComputedStyle(v).display), 'block', 'inline, the paused video stays in the page');
   await page.evaluate(() => { ctkPlayer.seek(50); });
-  await page.click('.media-player_bar [data-player="mode"]');
+  await page.evaluate(() => ctkPlayer.setMode('watch'));
   await page.waitForFunction(() => ctkPlayer.getMode() === 'watch' && ctkPlayer.getStatus() === 'playing');
   s = await state(page);
   assert.ok(Math.abs(s.yt.seeks[s.yt.seeks.length - 1] - 50) < 2, `video sought to ~50 (got ${s.yt.seeks})`);
@@ -431,7 +435,7 @@ test('switching while paused stays paused, and a bad audio file falls back to vi
   const bad = await open('/sermon/bad?audio=/missing.mp3');
   await play(bad.page);
   await bad.page.waitForFunction(() => ctkPlayer.isPlaying());
-  await bad.page.click('.media-player_bar [data-player="mode"]');
+  await bad.page.evaluate(() => ctkPlayer.setMode('listen'));
   await bad.page.waitForFunction(() => ctkPlayer.getMode() === 'watch' && /Audio/.test(document.querySelector('[data-player="status"]').textContent));
   const s = await state(bad.page);
   assert.equal(s.yt.state, 1, 'video resumed');
@@ -463,9 +467,10 @@ test('the progress edge seeks by pointer and keyboard, and the time reads along 
   const { page, ctx } = await open();
   await play(page);
   await page.waitForFunction(() => ctkPlayer.isPlaying());
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-player="bar"]')).visibility === 'visible' && document.querySelector('[data-player="bar"]').getBoundingClientRect().bottom <= innerHeight + 1);
+  await barSettled(page);
+  await page.waitForFunction(() => document.querySelector('[data-player="duration"]').textContent === '1:00:00', null, { timeout: 5000 }); // the track settles once the duration is on the row
   const track = await page.$('[data-player="progress"]');
-  const box = await track.boundingBox();
+  let box = await track.boundingBox();
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
   let s = await state(page);
   assert.ok(Math.abs(s.yt.seeks[s.yt.seeks.length - 1] - 1800) < 40, `clicked halfway → ~1800s (${s.yt.seeks})`);
@@ -473,8 +478,17 @@ test('the progress edge seeks by pointer and keyboard, and the time reads along 
   await page.keyboard.press('ArrowRight');
   s = await state(page);
   assert.ok(Math.abs(s.yt.seeks[s.yt.seeks.length - 1] - 1805) < 40, `arrow → +5s (${s.yt.seeks})`);
-  assert.match(await page.$eval('[data-player="time"]', (e) => e.textContent), /^30:0\d \/ 1:00:00$/);
+  assert.match(await page.$eval('[data-player="time"]', (e) => e.textContent), /^30:0\d$/);
+  assert.equal(await page.$eval('[data-player="duration"]', (e) => e.textContent), '1:00:00');
+  const share = await page.$eval('[data-player="progress"]', (e) => ({ fill: e.firstChild.getBoundingClientRect().width, track: e.getBoundingClientRect().width, v: e.style.getPropertyValue('--player-progress'), flex: getComputedStyle(e.firstChild).flex }));
+  assert.ok(Math.abs(share.fill / share.track - 0.5) < 0.02, `the fill is the played share of the track ${JSON.stringify(share)}`);
   assert.match(await page.$eval('[data-player="progress"]', (e) => e.style.getPropertyValue('--player-progress')), /^50\.\d+%$/);
+  // A click on the track seeks; it must not also act as the title's "back to the sermon page".
+  await page.evaluate(() => (window.__nav = 0, document.addEventListener('ctk:player:navigate', () => window.__nav++)));
+  box = await track.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height / 2);
+  assert.equal(await page.evaluate(() => window.__nav), 0);
+  await page.waitForFunction(() => /^25\.\d+%$/.test(document.querySelector('[data-player="progress"]').style.getPropertyValue('--player-progress')), null, { timeout: 3000 });
   await ctx.close();
 });
 
@@ -572,7 +586,7 @@ test('the transcript embed follows the shared player: rows seek it, its play but
   await page.waitForFunction(() => ctkPlayer.getTime() >= 120);
   await page.waitForFunction(() => document.querySelector('.media-secondary [data-t-row]:nth-of-type(3)').hasAttribute('data-t-active'));
   // Reaching the transcript scrolled the stage away, so the audio has already taken over; otherwise switch.
-  if (await page.evaluate(() => ctkPlayer.getMode()) !== 'listen') await page.click('.media-player_bar [data-player="mode"]');
+  if (await page.evaluate(() => ctkPlayer.getMode()) !== 'listen') await page.evaluate(() => ctkPlayer.setMode('listen'));
   await page.waitForFunction(() => ctkPlayer.getMode() === 'listen' && ctkPlayer.getStatus() === 'playing');
   await page.waitForFunction(() => Math.abs(ctkPlayer.getTime() - 120) < 3);
   assert.ok(await page.$eval('.media-secondary [data-t-row]:nth-of-type(3)', (r) => r.hasAttribute('data-t-active')));

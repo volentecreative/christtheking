@@ -211,10 +211,13 @@ Spotify / Apple row (first in the row; a labelled button after the stage on a
 page without that row). From the first play until it is closed, a floating
 card like the Beliefs pages' section selector (2px border, small radius, card
 surface, the back-to-top button's shadow) sits bottom-right on desktop and
-across the bottom, inset from the edges, on phones: a gold scrubbable progress
-edge along its top, title, speaker and time on the meta line (the
-series-playlist row styles), Listen/Watch, a gold play/pause styled like the
-back-to-top button, and close. The title goes back to the sermon page.
+across the bottom, inset from the edges, on phones: the title (fading out at
+its right edge), under it elapsed · a scrubbable gold progress line ·
+duration, then a gold round play/pause and the site's icon-button close. The
+title goes back to the sermon page. There is no Listen/Watch on the bar: the
+page's Listen button, YouTube's own play, and `ctkPlayer.setMode()` switch
+sources. Status messages (resumed at, paused, audio failed) are read out by a
+screen reader; the bar has no slot for them.
 
 **No video ever leaves the stage.** A playing YouTube video may not be hidden
 (its policy) and stops when the page is hidden anyway, so whenever the video
@@ -292,22 +295,24 @@ each in-place page swap. Do not put anything else inside it.
 | --- | --- |
 | `media-player_bar` | the floating card: fixed, 26rem wide bottom-right on desktop; tablet and below spans the width. Inset `calc(var(--_spacing---gutter) / 2)` on every side. Hidden by default (slid down, transparent). |
 | `media-player_bar is-visible` | the shown state the script toggles while a sermon is active |
-| `media-player_info` | the title + meta column; goes back to the sermon page |
+| `media-player_info` | the title + time column; goes back to the sermon page (a click on the progress line inside it does not) |
 | `text-style-title-small media-player_title` | one line that fades out at the right edge (`mask-image`) instead of ending in `…`. A combo on the site's title style. |
-| `media-meta media-player_meta` | the speaker · time · status line (the items use the site's `text-style-media-meta` / `meta-divider`). A combo on the site's meta style. |
+| `media-player_time` | the row under the title: elapsed · progress · duration (the times are the site's `text-style-media-meta`) |
+| `media-player_progress` | the scrubbable track between the times; its `::before` is the track line |
+| `media-player_progress-fill` | the gold played share (the script sets its flex basis) |
 | `media-player_controls` | the button row |
-| `media-player_btn` | a 2.75rem icon button (Listen/Watch); hover and focus states |
-| `media-player_btn is-play` | play/pause: gold, round, 2px border, the back-to-top shadow, scale on press |
-| `media-player_btn is-close` | the 2rem close button |
-| `media-player_progress` | the scrubbable strip along the top edge; its `::before` is the track |
-| `media-player_progress-fill` | the gold played share (the script sets its width) |
+| `media-player_btn` | the 2.75rem button base; hover and focus states |
+| `media-player_btn is-play` | play/pause: the primary button colours, round, 2px border, the back-to-top shadow, scale on press |
+| `icon-button` | close, the same class as the Spotify / Apple buttons |
+| `media-player_btn is-close`, `media-meta media-player_meta` | no longer used by the script (1.5.0); still in the Designer, safe to delete |
 | `media-player_video` | the 16:9 box that holds the YouTube iframe over the stage |
 | `media-player_listen` (+ `is-fallback`) | the Listen button in the "Listen on" row (`icon-button` does the look); `is-fallback` is the bordered pill used when that row is absent |
 
-The bar's text uses the site's own classes where a playlist row and the
-platform icons do (`text-style-title-small`, `media-meta`,
-`text-style-media-meta`, `meta-divider`, `icon-button`), so restyling those
-restyles the bar too. `styles/media-player.css` is a reference copy of the
+The bar's text and close button use the site's own classes
+(`text-style-title-small`, `text-style-media-meta`, `icon-button`), so
+restyling those restyles the bar too. The script mirrors the mockup's tree;
+if you restructure the mockup (add, remove or reorder parts), the script has
+to follow — tell whoever maintains it. `styles/media-player.css` is a reference copy of the
 classes for the repo and the tests; the Designer is the source of truth.
 
 ### Hosting the script
@@ -327,7 +332,9 @@ cross-page playback); 1.2.0 (bottom bar only while playing, Listen button);
 1.3.0 (floating card, no video off-screen, hand-off on leaving the browser);
 1.4.0 (styles moved to Designer classes, title fade, half-gutter inset, no
 re-run of Webflow's per-page bundle on a swap); 1.4.1 (title and meta classes
-as combos, the Designer mockup removed from the live page). To ship a change: commit it, then
+as combos, the Designer mockup removed from the live page); 1.5.0 (the bar
+mirrors the restyled mockup: title over elapsed · progress · duration, no
+speaker or Listen/Watch on the bar, close is the site's icon-button). To ship a change: commit it, then
 re-register with the new commit's URL and hash and bump the version:
 
 ```sh

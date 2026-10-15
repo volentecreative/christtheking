@@ -17,6 +17,9 @@
     .container { width: min(960px, 100% - 32px); margin: 0 auto; }
     .video-embed { aspect-ratio: 16 / 9; border-radius: var(--border-radius-medium); overflow: clip; margin-bottom: -.5rem; }
     .filler { height: 3000px; }
+    /* The site classes the bar borrows. */
+    .icon-button { position: relative; display: flex; width: 2rem; height: 2rem; padding: .4rem; justify-content: center; align-items: center; border-radius: .5rem; color: #fff; cursor: pointer; }
+    .text-style-media-meta { margin: 0; flex: 0 0 auto; font: 600 .75rem/1 monospace; text-transform: uppercase; color: #999; }
     .scroll-to-top_button { position: fixed; right: 16px; bottom: 16px; width: 44px; height: 44px; z-index: 90; }
     .media-transcript_body { max-height: 240px; overflow: auto; }
     .media-transcript { position: relative; }
@@ -69,7 +72,7 @@
               <div data-transcript-sync><a href="#">Synchronize</a></div>
             </div>
           </div>
-          <div data-player-mockup aria-hidden="true"><div class="media-player_bar is-visible"><div class="media-player_info"><div class="text-style-title-small media-player_title">Mockup</div></div></div></div>
+          <div data-player-mockup aria-hidden="true"><div class="media-player_bar is-visible"><div class="media-player_info"><div class="text-style-title-small media-player_title">Mockup</div><div class="media-player_time"><div class="text-style-media-meta">0:00</div><div class="media-player_progress"><div class="media-player_progress-fill"></div></div><div class="text-style-media-meta">0:00</div></div></div><div class="media-player_controls"><div class="media-player_btn is-play"></div><a class="icon-button"></a></div></div></div>
           {{EMBED}}
           <p><a href="/other/page" data-test="content-other">Go to the other page</a> <a href="/sermon/another?video=zzzzzzzzzzz&audio=" data-test="content-another">Another sermon</a> <a href="/files/notes.pdf" data-test="file">a file</a> <a href="https://example.com/" data-test="external">elsewhere</a></p>
           <div><a href="#notes" data-test="hash">hash link</a></div>

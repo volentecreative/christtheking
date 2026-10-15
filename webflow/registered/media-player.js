@@ -25,8 +25,9 @@
  *                           A video never plays off-screen: scrolling away or leaving the
  *                           page hands over to the audio, or pauses a sermon without any
  *     .media-player_bar     a floating card (bottom-right on desktop, across the bottom on
- *                           phones) from the first play until closed: progress edge · title ·
- *                           speaker · time · Listen/Watch · play/pause · close
+ *                           phones) from the first play until closed: title · elapsed ·
+ *                           progress · duration · play/pause · close. No Listen/Watch on it:
+ *                           the page's Listen button and setMode() switch sources.
  *   .media-player_listen    a "Listen" icon button added to the page's "Listen on" row
  *   The iframe is never moved in the DOM (moving an iframe reloads it).
  *
@@ -139,12 +140,12 @@
     return n;
   }
   function svg(path, extra) {
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="24" height="24" fill="currentColor" aria-hidden="true" focusable="false"><path d="' + path + '"/>' + (extra || '') + '</svg>';
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="100%" fill="none" aria-hidden="true" focusable="false"><path d="' + path + '" fill="currentColor"/>' + (extra || '') + '</svg>';
   }
   // Material Symbols (Apache 2.0), the set the site's button component draws from.
   var ICON = {
     play: 'M320-200v-560l440 280-440 280Z',
-    pause: 'M520-200v-560h240v560H520Zm-320 0v-560h240v560H200Z',
+    pause: 'M560-200v-560h160v560H560Zm-320 0v-560h160v560H240Z',
     close: 'm256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z',
     expand: 'M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h184v80H120Z',
     listen: 'M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z',
@@ -173,15 +174,17 @@
       '.media-player[data-over-sheet] .media-player_bar{z-index:1002}',
       '@media (prefers-reduced-motion:reduce){.media-player_bar{transition:none}}',
       /* Empty meta items, and the dividers beside them, drop out of the speaker · time · status line. */
-      '.media-player_meta > [data-empty],.media-player_meta > [data-empty] + .meta-divider,.media-player_meta > .meta-divider:has(+ [data-empty]),.media-player_meta > .meta-divider:first-child{display:none}',
-      '.media-player_btn svg{width:1.5rem;height:1.5rem}',
-      '.media-player_btn.is-close svg{width:1.25rem;height:1.25rem}',
+      /* A real <button> wearing the mockup's div classes: drop the browser's own button look. */
+      'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
       '.media-player_btn[data-on] [data-icon="off"],.media-player_btn:not([data-on]) [data-icon="on"]{display:none}',
-      '.media-player_btn[aria-pressed="true"]{color:var(--_theme---accent-01)}',
-      /* The fill is the played share of the progress edge; the edge thickens under a pointer. */
+      '.media-player_time > [data-empty]{display:none}',
+      /* The fill is the played share of the track (its flex basis, since it is a flex item); the
+         track thickens under a pointer. */
       '.media-player_progress{touch-action:none}',
-      '.media-player_progress-fill{width:var(--player-progress,0%)}',
+      '.media-player_progress > .media-player_progress-fill{flex:0 0 var(--player-progress,0%)}',
       '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress-fill,.media-player_progress:hover .media-player_progress-fill{height:5px}',
+      /* Status messages are read out, not shown: the bar has no slot for them. */
+      '.media-player_status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}',
       '.media-player_listen svg{width:100%;height:100%}',
       '.media-player_listen.is-fallback svg{width:1.25rem;height:1.25rem}',
       '.media-player_listen[aria-pressed="true"]{color:var(--_theme---accent-01)}',
@@ -206,7 +209,6 @@
     if (extra) for (var k in extra) n.setAttribute(k, extra[k]);
     return n;
   }
-  function divider() { return el('div', 'meta-divider', { 'aria-hidden': 'true' }); }
   function build() {
     root = el('div', 'media-player', {
       'data-player': 'root', role: 'region', 'aria-label': 'Sermon player',
@@ -216,55 +218,56 @@
     videoBox = el('div', 'media-player_video', { 'data-player': 'video' });
     bar = el('div', 'media-player_bar', { 'data-player': 'bar' });
 
-    // Title + meta line, the way a series-playlist row shows them. The title goes to the sermon page.
+    // The same tree as the Designer mockup on the Media Template (data-player-mockup):
+    //   info (title; time row: elapsed · progress · duration) · controls (play/pause, close).
+    // The title goes back to the sermon page; the progress row inside it does not.
     els.info = el('div', 'media-player_info', { 'data-player': 'info', role: 'button', tabindex: '0' });
     els.title = el('div', 'text-style-title-small media-player_title', { 'data-player': 'title' });
     els.title.textContent = title;
-    els.meta = el('div', 'media-meta media-player_meta');
-    els.artist = metaItem('speaker');
-    els.artist.textContent = artist;
-    els.time = metaItem('time', { 'aria-hidden': 'true' });
-    els.status = metaItem('status', { role: 'status', 'aria-live': 'polite' });
-    els.meta.appendChild(els.artist);
-    els.meta.appendChild(divider());
-    els.meta.appendChild(els.time);
-    els.meta.appendChild(divider());
-    els.meta.appendChild(els.status);
-    els.info.appendChild(els.title);
-    els.info.appendChild(els.meta);
-
-    var controls = el('div', 'media-player_controls');
-    els.mode = button('mode', 'Switch to audio',
-      '<span data-icon="off">' + svg(ICON.listen) + '</span><span data-icon="on">' + svg(ICON.watch) + '</span>',
-      { 'aria-pressed': 'false' });
-    els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>');
-    els.play.classList.add('is-play');
-    if (videoId && audioUrl) controls.appendChild(els.mode);
-    controls.appendChild(els.play);
-    els.close = button('close', 'Close player', svg(ICON.close));
-    els.close.classList.add('is-close');
-    controls.appendChild(els.close);
-
-    // Progress edge: a slider for the keyboard, a strip for a finger.
+    els.time = el('div', 'media-player_time', { 'aria-hidden': 'true' });
+    els.elapsed = metaItem('time');
     els.progress = el('div', 'media-player_progress', {
       'data-player': 'progress', role: 'slider', tabindex: '0', 'aria-label': 'Position',
       'aria-valuemin': '0', 'aria-valuemax': '0', 'aria-valuenow': '0'
     });
     els.fill = el('div', 'media-player_progress-fill');
     els.progress.appendChild(els.fill);
+    els.duration = metaItem('duration');
+    els.time.appendChild(els.elapsed);
+    els.time.appendChild(els.progress);
+    els.time.appendChild(els.duration);
+    els.time.removeAttribute('aria-hidden'); // the slider inside must stay reachable
+    els.elapsed.setAttribute('aria-hidden', 'true');
+    els.duration.setAttribute('aria-hidden', 'true');
+    els.info.appendChild(els.title);
+    els.info.appendChild(els.time);
+    els.status = el('div', 'media-player_status', { 'data-player': 'status', role: 'status', 'aria-live': 'polite' });
 
-    bar.appendChild(els.progress);
+    var controls = el('div', 'media-player_controls');
+    els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>');
+    els.play.classList.add('is-play');
+    controls.appendChild(els.play);
+    // Close is the site's icon-button, as in the mockup (an <a>, like the Spotify / Apple ones).
+    els.close = el('a', 'icon-button', { href: '#', role: 'button', tabindex: '0', 'aria-label': 'Close player', 'data-player': 'close', 'data-player-nav': 'off' });
+    els.close.innerHTML = svg(ICON.close);
+    controls.appendChild(els.close);
+
     bar.appendChild(els.info);
     bar.appendChild(controls);
+    bar.appendChild(els.status);
     root.appendChild(videoBox);
     root.appendChild(bar);
     d.body.appendChild(root);
 
-    els.mode.addEventListener('click', function () { api.setMode(S.mode === 'listen' ? 'watch' : 'listen'); });
+    function inProgress(e) { var n = e.target; while (n && n !== els.info) { if (n === els.progress) return true; n = n.parentNode; } return false; }
     els.play.addEventListener('click', function () { api.toggle(); });
-    els.close.addEventListener('click', function () { api.close(); });
-    els.info.addEventListener('click', function () { api.expand(); });
+    els.close.addEventListener('click', function (e) { e.preventDefault(); api.close(); });
+    els.close.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.close(); }
+    });
+    els.info.addEventListener('click', function (e) { if (!inProgress(e)) api.expand(); });
     els.info.addEventListener('keydown', function (e) {
+      if (inProgress(e)) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.expand(); }
     });
     root.addEventListener('keydown', function (e) {
@@ -318,9 +321,9 @@
       scrubbing = fractionAt(e);
       paint();
     });
-    function release(e) {
+    function release() {
       if (scrubbing === null) return;
-      var f = fractionAt(e);
+      var f = scrubbing; // the last fraction under the pointer, not a fresh read: the row may have shifted
       scrubbing = null;
       api.seek(f * api.getDuration(), { play: false });
     }
@@ -373,9 +376,6 @@
     bar.classList.toggle('is-visible', S.barShown);
     if (playing) els.play.setAttribute('data-on', ''); else els.play.removeAttribute('data-on');
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    if (S.mode === 'listen') els.mode.setAttribute('data-on', ''); else els.mode.removeAttribute('data-on');
-    els.mode.setAttribute('aria-pressed', String(S.mode === 'listen'));
-    els.mode.setAttribute('aria-label', S.mode === 'listen' ? 'Switch to video' : 'Switch to audio');
     if (els.listen) {
       var listening = S.mode === 'listen' && playing;
       els.listen.setAttribute('aria-pressed', String(listening));
@@ -385,13 +385,17 @@
 
     var dur = api.getDuration();
     var t = scrubbing === null ? api.getTime() : scrubbing * dur;
-    els.time.textContent = fmt(t) + (dur ? ' / ' + fmt(dur) : '');
+    els.elapsed.textContent = fmt(t);
+    els.duration.textContent = dur ? fmt(dur) : '';
+    // The elapsed time is as wide as the duration from the start, so the track between them
+    // does not shift under a finger as the digits change (the meta style is monospaced).
+    els.elapsed.style.minWidth = dur ? fmt(dur).length + 'ch' : '';
     var pct = dur ? clamp(t / dur, 0, 1) * 100 : 0;
     els.progress.style.setProperty('--player-progress', pct.toFixed(2) + '%');
     els.progress.setAttribute('aria-valuemax', String(Math.round(dur)));
     els.progress.setAttribute('aria-valuenow', String(Math.round(t)));
     els.progress.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
-    [els.artist, els.time, els.status].forEach(function (n) { n.toggleAttribute('data-empty', !n.textContent); });
+    els.duration.toggleAttribute('data-empty', !dur);
 
     bar.inert = !S.barShown;
     d.body.classList.toggle('has-player-dock', S.barShown);
@@ -997,9 +1001,6 @@
       if (audio) { audio.pause(); audio = null; }
       if (root) {
         root.setAttribute('data-has-audio', String(!!audioUrl));
-        var controls = $('.media-player_controls', root);
-        if (audioUrl && videoId && !els.mode.parentNode) controls.insertBefore(els.mode, controls.firstChild);
-        if (!audioUrl && els.mode.parentNode) els.mode.parentNode.removeChild(els.mode);
         injectListen();
         paint();
       }
@@ -1031,7 +1032,6 @@
     }).filter(Boolean).join(', ');
     artwork = videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/hqdefault.jpg' : null;
     if (els.title) els.title.textContent = title;
-    if (els.artist) els.artist.textContent = artist;
   }
   // Load the sermon on this page into the player (first load, or a new sermon reached by navigation).
   function mount(el) {
@@ -1059,9 +1059,6 @@
     root.removeAttribute('data-over-sheet');
     root.setAttribute('data-has-video', String(!!videoId));
     root.setAttribute('data-has-audio', String(!!audioUrl));
-    var controls = $('.media-player_controls', root);
-    if (videoId && audioUrl) { if (!els.mode.parentNode) controls.insertBefore(els.mode, controls.firstChild); }
-    else if (els.mode.parentNode) els.mode.parentNode.removeChild(els.mode);
     readPage();
     say('');
     buildIframe();
