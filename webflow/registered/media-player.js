@@ -176,12 +176,12 @@
       /* Empty meta items, and the dividers beside them, drop out of the speaker · time · status line. */
       /* A real <button> wearing the mockup's div classes: drop the browser's own button look. */
       'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
-      '.media-player_btn[data-on] [data-icon="off"],.media-player_btn:not([data-on]) [data-icon="on"]{display:none}',
       '.media-player_time > [data-empty]{display:none}',
-      /* The fill is the played share of the track (its flex basis, since it is a flex item); the
-         track thickens under a pointer. */
+      /* The fill is the played share of the track: laid over it from the left, its width the share.
+         (Not a flex basis: Safari resolves a percentage basis inside a flex-grown track to zero.)
+         The track thickens under a pointer. */
       '.media-player_progress{touch-action:none}',
-      '.media-player_progress > .media-player_progress-fill{flex:0 0 var(--player-progress,0%);margin-right:auto}',
+      '.media-player_progress > .media-player_progress-fill{position:absolute;left:0;top:50%;transform:translateY(-50%);width:var(--player-progress,0%);flex:none;margin:0}',
       '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress-fill,.media-player_progress:hover .media-player_progress-fill{height:5px}',
       /* Status messages are read out, not shown: the bar has no slot for them. */
       '.media-player_status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}',
@@ -244,7 +244,9 @@
     els.status = el('div', 'media-player_status', { 'data-player': 'status', role: 'status', 'aria-live': 'polite' });
 
     var controls = el('div', 'media-player_controls');
-    els.play = button('play', 'Play', '<span data-icon="off">' + svg(ICON.play) + '</span><span data-icon="on">' + svg(ICON.pause) + '</span>');
+    // One svg > path, as in the mockup; paint() swaps the path between play and pause.
+    els.play = button('play', 'Play', svg(ICON.play));
+    els.playPath = els.play.querySelector('path');
     els.play.classList.add('is-play');
     controls.appendChild(els.play);
     // Close is the site's icon-button, as in the mockup (an <a>, like the Spotify / Apple ones).
@@ -376,6 +378,7 @@
     bar.classList.toggle('is-visible', S.barShown);
     if (playing) els.play.setAttribute('data-on', ''); else els.play.removeAttribute('data-on');
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    els.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
     if (els.listen) {
       var listening = S.mode === 'listen' && playing;
       els.listen.setAttribute('aria-pressed', String(listening));
