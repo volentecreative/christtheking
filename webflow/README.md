@@ -304,7 +304,6 @@ each in-place page swap. Do not put anything else inside it.
 | `media-player_btn` | the 2.75rem button base; hover and focus states |
 | `media-player_btn is-play` | play/pause: the primary button colours, round, 2px border, the back-to-top shadow, scale on press |
 | `icon-button` | close, the same class as the Spotify / Apple buttons |
-| `media-player_btn is-close`, `media-meta media-player_meta` | no longer used by the script (1.5.0); still in the Designer, safe to delete |
 | `media-player_video` | the 16:9 box that holds the YouTube iframe over the stage |
 | `media-player_listen` (+ `is-fallback`) | the Listen button in the "Listen on" row (`icon-button` does the look); `is-fallback` is the bordered pill used when that row is absent |
 

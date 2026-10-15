@@ -138,14 +138,6 @@
 }
 .media-player_btn.is-play:hover { background-color: var(--_theme---accent-01, #d4af37); filter: brightness(106%); }
 .media-player_btn.is-play:active { transform: scale(0.92); }
-/* Unused since 1.5.0 (close is the site's icon-button now); still in the Designer. */
-.media-player_btn.is-close {
-  width: 2rem;
-  height: 2rem;
-  color: var(--_theme---text-02, #ccc);
-}
-/* Unused since 1.5.0 (the bar has no meta line now); still in the Designer. */
-.media-meta.media-player_meta { min-width: 0; }
 
 .media-player_video {
   position: absolute;

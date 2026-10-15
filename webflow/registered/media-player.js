@@ -38,8 +38,8 @@
  *   over or paused, never kept playing out of view.
  *
  * STYLES  The look lives in Designer classes (style panel): media-player_bar
- *   (+ is-visible), _info, _title (a combo on text-style-title-small), _meta (a
- *   combo on media-meta), _controls, _btn (+ is-play, is-close), _progress,
+ *   (+ is-visible), _info, _title (a combo on text-style-title-small), _time,
+ *   _controls, _btn (+ is-play), _progress,
  *   _progress-fill, _video, _listen (+ is-fallback). The script only injects
  *   behaviour CSS (attribute states, :has(), the progress variable, the dock
  *   bumps). webflow/styles/media-player.css is a reference copy. A static
@@ -154,9 +154,9 @@
 
   /* ---------- CSS: behaviour only. Everything that is a look (the bar card, the buttons, the
      progress edge, the title fade, the Listen button) is a real Designer class, editable in the
-     style panel: media-player_bar (+ is-visible), _info, _title, _meta, _controls, _btn (+ is-play,
-     is-close), _progress, _progress-fill, _video, _listen (+ is-fallback). The rules below are the
-     ones the panel cannot express: attribute states, :has(), a CSS variable's value, and the bumps
+     style panel: media-player_bar (+ is-visible), _info, _title, _time, _controls, _btn (+ is-play),
+     _progress, _progress-fill, _video, _listen (+ is-fallback). The rules below are the
+     ones the panel cannot express: attribute states, a CSS variable's value, and the bumps
      for things that share the bottom edge. webflow/styles/media-player.css mirrors the classes. ---------- */
   function css() {
     if ($('style[data-player-style]')) return;
