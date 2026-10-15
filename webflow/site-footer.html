@@ -286,6 +286,27 @@
 </script>
 
 <script>
+/* Close the nav dropdown when one of its links is clicked (desktop).
+
+   Webflow's hover dropdown closes when the pointer leaves it, and a link that
+   loads a new page takes the open state with it. But Contact (a mailto: link)
+   and Sing Your Part (a new tab) leave this page where it is, with the list
+   still open under the pointer. And a page restored by Back comes out of the
+   browser's back/forward cache exactly as it was left - dropdown open.
+   'w-close' is Webflow's own close event, so its classes and aria-expanded are
+   reset the way its JS does it, and hovering the menu again opens it as usual. */
+(() => {
+  const close = () => {
+    if (window.jQuery) jQuery('.navbar_menu .w-dropdown').trigger('w-close');
+  };
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.nav_dropdown-list a[href]') && matchMedia('(min-width: 992px)').matches) close();
+  });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) close(); });
+})();
+</script>
+
+<script>
 /* Media card dates: the year appears once a date is more than twelve months
    old. "Sep 1" is this year's; "Sep 1, 2025" is last year's.
 
