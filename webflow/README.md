@@ -9,6 +9,7 @@ in the Designer.
 | --- | --- |
 | `site-head.html` | Site settings → Custom code → **Head** |
 | `site-footer.html` | Site settings → Custom code → **Footer** |
+| `redirects.csv` | Site settings → Publishing → **301 redirects**, before launch: every page in christtheking.build's sitemap (the old Subsplash site) mapped to its new home. `/give`, `/resources`, `/sermons` and `/exhortations` need no entry — the first two keep their paths, the last two already redirect. |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 | `registered/scroll-to-top.js` | Site settings → Custom code → **Registered scripts**, as `scrollToTop` (drives `.scroll-to-top_button` in the footer component) |
 | `registered/reading-progress.js` | Site settings → Custom code → **Registered scripts**, as `readingProgress` (fills the gold `.navbar-progress_fill` inside the 2px `.navbar-progress` track on pages with a `[data-reading-progress]` element: Journals Template body, Beliefs, Elder Affirmation, Member Covenant; also writes "N min read" into any `[data-read-time]`) |
