@@ -181,7 +181,7 @@
       /* The fill is the played share of the track (its flex basis, since it is a flex item); the
          track thickens under a pointer. */
       '.media-player_progress{touch-action:none}',
-      '.media-player_progress > .media-player_progress-fill{flex:0 0 var(--player-progress,0%)}',
+      '.media-player_progress > .media-player_progress-fill{flex:0 0 var(--player-progress,0%);margin-right:auto}',
       '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress-fill,.media-player_progress:hover .media-player_progress-fill{height:5px}',
       /* Status messages are read out, not shown: the bar has no slot for them. */
       '.media-player_status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}',

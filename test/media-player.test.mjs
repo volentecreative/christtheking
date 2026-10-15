@@ -482,6 +482,7 @@ test('the progress edge seeks by pointer and keyboard, and the time reads along 
   assert.equal(await page.$eval('[data-player="duration"]', (e) => e.textContent), '1:00:00');
   const share = await page.$eval('[data-player="progress"]', (e) => ({ fill: e.firstChild.getBoundingClientRect().width, track: e.getBoundingClientRect().width, v: e.style.getPropertyValue('--player-progress'), flex: getComputedStyle(e.firstChild).flex }));
   assert.ok(Math.abs(share.fill / share.track - 0.5) < 0.02, `the fill is the played share of the track ${JSON.stringify(share)}`);
+  assert.ok(Math.abs(await page.$eval('[data-player="progress"]', (e) => e.firstChild.getBoundingClientRect().left - e.getBoundingClientRect().left)) < 1, 'the fill starts at the left edge of the track');
   assert.match(await page.$eval('[data-player="progress"]', (e) => e.style.getPropertyValue('--player-progress')), /^50\.\d+%$/);
   // A click on the track seeks; it must not also act as the title's "back to the sermon page".
   await page.evaluate(() => (window.__nav = 0, document.addEventListener('ctk:player:navigate', () => window.__nav++)));
