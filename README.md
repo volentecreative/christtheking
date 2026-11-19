@@ -79,7 +79,7 @@ item, so **don't edit that field in the Designer.**
 | `slug` | slugified title, de-duplicated |
 | `youtube-video-id` | video id — the sync key |
 | `video-url` | `https://www.youtube.com/watch?v=…` |
-| `thumbnail` | highest-resolution YouTube thumbnail |
+| `thumbnail` | highest-resolution YouTube thumbnail, as WebP when YouTube serves it (see [Thumbnails as WebP](#thumbnails-as-webp)) |
 | `date` | actual upload/premiere timestamp |
 | `duration-seconds` | video length |
 | `type` | `Sermon` ≥ 15 min, `Exhortation` below — **first sync only** |
@@ -120,7 +120,7 @@ gates:
   **exact** `<published>` stamp: the same moment the full fetch would record. It
   covers only the ~15 newest uploads, which is the set a blocked run is usually
   working on; anything older keeps a blank date.
-- **`thumbnail`** — `https://i.ytimg.com/vi/<id>/<quality>.jpg`, read by
+- **`thumbnail`** — `https://i.ytimg.com/vi_webp/<id>/<quality>.webp` (or `/vi/<id>/<quality>.jpg` when there's no WebP), read by
   `lib/thumbnail.js`. A plain image CDN with no bot gate. Qualities are *probed*
   best-first (`maxresdefault` → `sddefault` → `hqdefault`) rather than assumed,
   since which files exist depends on the source upload, so a probed URL is
@@ -256,6 +256,28 @@ on the series *slug* (`/media?series_equal=1-timothy`) precisely because slugs
 never contain spaces. A new series needs that field filled in by hand.
 
 ---
+
+## Thumbnails as WebP
+
+Media cards download each item's `thumbnail` as-is: Webflow re-hosts an Image
+field's URL byte for byte, and Collection List images get no `srcset`, so a
+phone fetches the full 1280×720 file for a ~360px card. YouTube serves the same
+frame as WebP from `/vi_webp/` at roughly 40% of the JPEG's bytes, so the sync
+writes that instead (`preferWebp` / `resolveThumbnailUrl` in `lib/thumbnail.js`,
+falling back to the JPEG whenever a WebP isn't there).
+
+`refresh-thumbnails.js` brings existing items across: every Media item with a
+`youtube-video-id` whose current thumbnail isn't already a `.webp` gets
+YouTube's WebP. It's idempotent and runs in the daily Action after the podcast
+step; locally:
+
+```bash
+node refresh-thumbnails.js --dry-run
+node refresh-thumbnails.js
+```
+
+It overwrites the thumbnail field, so a thumbnail replaced by hand with a
+non-YouTube image would be swapped back — use `--video <id>` to limit a run.
 
 ## Transcripts
 

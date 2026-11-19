@@ -83,6 +83,15 @@ jobs:
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
         run: node sync-podcast.js ${{ inputs.dry_run && '--dry-run' || '' }} --report podcast-report.csv --verbose
 
+      # Moves any Media thumbnail that isn't WebP onto YouTube's WebP file (~40%
+      # of the bytes). New items already get WebP from the YouTube step; this
+      # catches the rest. One Webflow list call when there's nothing to do.
+      - name: Refresh thumbnails
+        if: always()
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+        run: node refresh-thumbnails.js ${{ inputs.dry_run && '--dry-run' || '' }}
+
       # Last, so it reflects any speaker-s the steps above just filled.
       # Runs even if they failed — a drifted speaker-text is worth fixing either way.
       - name: Reconcile speaker text

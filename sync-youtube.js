@@ -58,7 +58,7 @@ import {
   uniqueSlug,
 } from './lib/parse.js';
 import { fetchChannelFeed } from './lib/feed.js';
-import { resolveThumbnailUrl } from './lib/thumbnail.js';
+import { preferWebp, resolveThumbnailUrl } from './lib/thumbnail.js';
 import { WebflowClient } from './lib/webflow.js';
 import { fetchVideoBundle, listChannelVideos, ytdlpVersion } from './lib/ytdlp.js';
 
@@ -656,6 +656,14 @@ async function main() {
         sermonMinSeconds: config.sermonMinSeconds,
         now,
       });
+
+      // yt-dlp reports the JPEG; YouTube serves the same frame as WebP at ~40% of
+      // the bytes. Only checked when the thumbnail is about to be written (new
+      // item, empty field, or --force), so an up-to-date run costs nothing extra.
+      const thumbnailEmpty = !existing || !(existing.fieldData.thumbnail || {}).url;
+      if (desired.thumbnail && (thumbnailEmpty || options.force)) {
+        desired.thumbnail = await preferWebp(desired.thumbnail);
+      }
 
       if (existing) {
         const { patch, changed, changedFields } = buildUpdatePatch(desired, existing.fieldData, {
