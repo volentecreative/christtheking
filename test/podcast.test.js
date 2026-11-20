@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
   appleEpisodeUrl,
+  correctedDate,
+  recordedFromDescription,
   daysApart,
   findSpeaker,
   matchEpisodes,
@@ -391,4 +393,38 @@ test('parseAppleEpisodes keeps the description', () => {
     wrapperType: 'podcastEpisode', episodeGuid: 'g', trackName: 't', description: 'Sermon by A B on C.',
   }] });
   assert.equal(ep.description, 'Sermon by A B on C.');
+});
+
+/* ---------------------------------------------------------------- *
+ * Service date from the description (YouTube stamps trail batch uploads)
+ * ---------------------------------------------------------------- */
+
+const SERMON = 'Sermon by Andy Naselli on 1 Corinthians 14, recorded on October 25, 2026. \nChrist the King Church';
+const EXHORT = 'Exhortation by Grant Colestock, recorded on October 25, 2026.';
+
+test('recordedFromDescription reads the day and the kind', () => {
+  assert.deepEqual(recordedFromDescription(SERMON), { day: '2026-10-25', kind: 'sermon' });
+  assert.deepEqual(recordedFromDescription(EXHORT), { day: '2026-10-25', kind: 'exhortation' });
+  assert.deepEqual(recordedFromDescription('Sermon by A B, recorded on November 1, 2026.'), { day: '2026-11-01', kind: 'sermon' });
+  assert.equal(recordedFromDescription('No date here'), null);
+});
+
+test('a YouTube upload stamp later than the service is corrected, at the CMS hour for its kind', () => {
+  assert.equal(correctedDate('2026-11-17T07:45:18.000Z', SERMON), '2026-10-25T16:00:00.000Z');
+  assert.equal(correctedDate('2026-11-17T07:46:31.000Z', EXHORT), '2026-10-25T15:00:00.000Z');
+});
+
+test('a blank date is filled from the description', () => {
+  assert.equal(correctedDate(null, EXHORT), '2026-10-25T15:00:00.000Z');
+});
+
+test('a date on or before the recording day is left alone (set by hand)', () => {
+  assert.equal(correctedDate('2026-10-25T16:00:00.000Z', SERMON), null);
+  assert.equal(correctedDate('2026-10-24T16:00:00.000Z', SERMON), null);
+  // the day after still counts as the same service (time zones)
+  assert.equal(correctedDate('2026-10-26T02:00:00.000Z', SERMON), null);
+});
+
+test('no recorded date means no change', () => {
+  assert.equal(correctedDate('2026-11-17T07:45:18.000Z', 'Sermon by A B on John 3.'), null);
 });
