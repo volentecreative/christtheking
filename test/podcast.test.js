@@ -428,3 +428,9 @@ test('a date on or before the recording day is left alone (set by hand)', () => 
 test('no recorded date means no change', () => {
   assert.equal(correctedDate('2026-11-17T07:45:18.000Z', 'Sermon by A B on John 3.'), null);
 });
+
+test('a hand-set date (15:00/16:00Z) is never moved, even when the podcast disagrees', () => {
+  // CMS: Imitate God, Sep 28 2025 (hand-set). Podcast: recorded September 21, 2025.
+  assert.equal(correctedDate('2025-09-28T15:00:00.000Z', 'Exhortation by Dustin Williams, recorded on September 21, 2025.'), null);
+  assert.equal(correctedDate('2025-10-05T16:00:00.000Z', SERMON), null);
+});

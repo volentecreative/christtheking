@@ -588,7 +588,7 @@ node sync-podcast.js                                          # write
 | `audio-url` | the episode's audio file (Subsplash CDN) |
 | `spotify-episode-url` | Spotify per-episode link (needs credentials) |
 | `speaker-s` | parsed from the podcast title, or failing that the description ("Sermon by X on …"), **only when the field is blank** |
-| `date` | the service date from the description ("recorded on October 25, 2026"): fills a blank date, and corrects one that is **later** than the recording — a YouTube batch-upload stamp. A date on or before the service day was set by hand and is never touched. Exhortations get 15:00Z, sermons 16:00Z, matching the hand-set dates. |
+| `date` | the service date from the description ("recorded on October 25, 2026"): fills a blank date, and corrects one that is **later** than the recording — a YouTube batch-upload stamp. A date on or before the service day, or on the hand-set convention (exactly 15:00/16:00Z), was set by hand and is never touched. Exhortations get 15:00Z, sermons 16:00Z, matching the hand-set dates. |
 
 ### Why it matches on duration
 
