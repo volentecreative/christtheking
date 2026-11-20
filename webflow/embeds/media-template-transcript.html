@@ -1,17 +1,15 @@
 <!-- Christ the King — Media Template page → the HTML Embed inside .media-transcript
      (last child, after .media-transcript_body). Source of truth for that embed.
-     Transcript rows, the playing-row mark, follow-along, the YouTube link-up, and
-     the transcript tools: search, copy, download; expand / play-pause / close on
-     tablet/phone. There the page shows a read-only preview box
+     Transcript rows, the playing-row mark, follow-along, the player link-up
+     (window.ctkPlayer from the mediaPlayer registered script when present, else
+     the YouTube iframe directly), and the transcript tools: search, copy, download; expand / close on
+     tablet/phone (play / pause lives in the player bar). There the page shows a read-only preview box
      (.media-transcript.is-preview [data-transcript-preview], under the title)
      whose Expand buttons open the full transcript as a bottom sheet:
      .media-secondary is a narthex drawer (vci-modal="drawer", key "transcript",
      inline at 992px+), .media-transcript its sheet part. The preview's rows
      are a copy of the sheet's, made here, so the two are separate elements and
-     the sheet can slide away on close while the box stays put.
-     It also builds the YouTube player, in .video-embed [data-youtube-id] (the
-     YouTube Video ID field), so the iframe loads once with the player API on
-     rather than being reloaded to switch it on. -->
+     the sheet can slide away on close while the box stays put. -->
 <style>
   [data-t-row] {
     display: grid;
@@ -84,20 +82,13 @@
     margin-left: auto;
     flex: none;
   }
-  /* Icon state swaps: play ⇄ pause follows the player; copy shows a tick
-     for a moment after copying. The alternate icons (pause, tick) are
-     hidden by default in the style panel (.button-icon.is-alt). */
-  [data-transcript-play][data-playing] [data-icon='pause'],
+  /* Copy shows a tick for a moment after copying. The tick is hidden by
+     default in the style panel (.button-icon.is-alt). */
   [data-transcript-copy][data-done] [data-icon='done'] {
     display: block;
   }
-  [data-transcript-play][data-playing] [data-icon='play'],
   [data-transcript-copy][data-done] [data-icon='copy'] {
     display: none;
-  }
-  [data-transcript-play][aria-disabled='true'] {
-    opacity: 0.4;
-    cursor: default;
   }
   /* Search row: the media page's search field (.media-filters_search /
      .media-filters_input) re-used; its toolbar layout (full-width, first on
@@ -147,7 +138,7 @@
   }
   /* Header buttons by context. Desktop card: search, copy, download.
      Tablet/phone preview box: title + expand (.modal_close.is-expand).
-     Sheet: + play/pause and close (.modal_close.is-sheet-only, hidden in the
+     Sheet: + close (.modal_close.is-sheet-only, hidden in the
      style panel, shown here while open). The scrim
      (.media-transcript_scrim) is hidden in the style panel too. */
   /* Safari still wants the prefixed property for the style panel's
@@ -165,8 +156,7 @@
   [data-transcript-sync][data-show] {
     display: block;
   }
-  .media-transcript.is-visible [data-transcript-close],
-  .media-transcript.is-visible [data-transcript-play] {
+  .media-transcript.is-visible [data-transcript-close] {
     display: flex;
   }
   /* The sheet's grab bar (.media-transcript_grab, hidden in the style panel). */
@@ -213,75 +203,106 @@
 </style>
 <script>
   (function () {
-    var player = null,
-      ready = false,
-      holdPause = false,
-      cues = [];
+    var cues = [];
     var d = document;
     var reduced = matchMedia('(prefers-reduced-motion: reduce)');
     var $ = function (s, r) { return (r || d).querySelector(s); };
 
-    /* The video, built straight away: this embed comes after it in the page. */
-    (function () {
-      var box = $('[data-youtube-id]');
-      if (!box || box.querySelector('iframe')) return;
-      var id = (box.getAttribute('data-youtube-id') || '').trim();
-      if (!id) { box.style.display = 'none'; return; }
-      var f = d.createElement('iframe');
-      f.src = 'https://www.youtube.com/embed/' + encodeURIComponent(id) +
-        '?rel=0&modestbranding=1&playsinline=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
-      f.title = (($('h1') || {}).textContent || 'Sermon video').trim();
-      f.width = '100%';
-      f.height = '100%';
-      f.setAttribute('frameborder', '0');
-      f.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-      f.referrerPolicy = 'strict-origin-when-cross-origin';
-      f.allowFullscreen = true;
-      box.appendChild(f);
-    })();
+    /* The player. With the site's mediaPlayer registered script on the page,
+       window.ctkPlayer owns the video and the audio — Watch / Listen, inline
+       and floating — and this embed only reads the time and asks for seeks,
+       on whichever source is playing. Without it, the embed drives the
+       YouTube iframe itself, as it always has, so the page works either way.
+       Times are on the video's timeline in both cases. Chosen once the page is
+       parsed: the registered script is appended after this embed. */
+    var engine = null;
+    function pickEngine() { engine = window.ctkPlayer ? external() : local(); }
 
-    window.onYouTubeIframeAPIReady = function () {
-      init();
-    };
-    function api() {
-      if (window.YT && window.YT.Player) {
-        init();
-        return;
+    function external() {
+      var p = window.ctkPlayer;
+      return {
+        start: function () {},
+        playing: function () { return p.isPlaying(); },
+        time: function () { return p.hasVideo || p.hasAudio ? p.getTime() : null; },
+        seek: function (s, play) { p.seek(s, { play: play }); }
+      };
+    }
+
+    function local() {
+      var player = null, ready = false, holdPause = false;
+
+      /* The video, built straight away: this embed comes after it in the page. */
+      (function () {
+        var box = $('[data-youtube-id]');
+        if (!box || box.querySelector('iframe')) return;
+        var id = (box.getAttribute('data-youtube-id') || '').trim();
+        if (!id) { box.style.display = 'none'; return; }
+        var f = d.createElement('iframe');
+        f.src = 'https://www.youtube.com/embed/' + encodeURIComponent(id) +
+          '?rel=0&modestbranding=1&playsinline=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+        f.title = (($('h1') || {}).textContent || 'Sermon video').trim();
+        f.width = '100%';
+        f.height = '100%';
+        f.setAttribute('frameborder', '0');
+        f.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+        f.referrerPolicy = 'strict-origin-when-cross-origin';
+        f.allowFullscreen = true;
+        box.appendChild(f);
+      })();
+
+      function getIframe() {
+        return d.querySelector('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]');
       }
-      var t = d.createElement('script');
-      t.src = 'https://www.youtube.com/iframe_api';
-      d.head.appendChild(t);
-    }
-    function getIframe() {
-      return d.querySelector('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]');
-    }
-    function init() {
-      var ifr = getIframe();
-      if (!ifr || player) return;
-      if (ifr.src.indexOf('enablejsapi=1') === -1) {
-        ifr.src += (ifr.src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+      function init() {
+        var ifr = getIframe();
+        if (!ifr || player) return;
+        if (ifr.src.indexOf('enablejsapi=1') === -1) {
+          ifr.src += (ifr.src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+        }
+        player = new YT.Player(ifr, {
+          events: {
+            onReady: function () {
+              ready = true;
+            },
+            onStateChange: function (e) {
+              // A timestamp tapped in the drawer while the video had never been
+              // started: YouTube starts it on seekTo, so stop it straight away.
+              if (holdPause && e.data === 1) {
+                holdPause = false;
+                player.pauseVideo();
+              }
+            },
+          },
+        });
       }
-      player = new YT.Player(ifr, {
-        events: {
-          onReady: function () {
-            ready = true;
-            syncPlay();
-          },
-          onStateChange: function (e) {
-            // A timestamp tapped in the drawer while the video had never been
-            // started: YouTube starts it on seekTo, so stop it straight away.
-            if (holdPause && e.data === 1) {
-              holdPause = false;
-              player.pauseVideo();
-            }
-            syncPlay();
-          },
-        },
-      });
+      window.onYouTubeIframeAPIReady = function () { init(); };
+      function api() {
+        if (window.YT && window.YT.Player) { init(); return; }
+        var t = d.createElement('script');
+        t.src = 'https://www.youtube.com/iframe_api';
+        d.head.appendChild(t);
+      }
+      function state() {
+        return player && ready && player.getPlayerState ? player.getPlayerState() : -1;
+      }
+      return {
+        start: api,
+        playing: function () { var st = state(); return st === 1 || st === 3; },
+        time: function () { return player && ready && player.getCurrentTime ? player.getCurrentTime() : null; },
+        seek: function (s, play) {
+          if (!player || !ready) return;
+          if (!play) {
+            var st = state();
+            if (st === -1 || st === 5) holdPause = true;
+            player.seekTo(s, true);
+            return;
+          }
+          player.seekTo(s, true);
+          if (player.playVideo) player.playVideo();
+        }
+      };
     }
-    function state() {
-      return player && ready && player.getPlayerState ? player.getPlayerState() : -1;
-    }
+
     function inDrawer() {
       return !!(window.vci && vci.modal && vci.modal.isOpen('transcript'));
     }
@@ -290,38 +311,7 @@
        always has. In the drawer it only moves the playhead: someone reading
        along keeps control of whether the sermon is playing. */
     function seek(s) {
-      if (!player || !ready) return;
-      if (inDrawer()) {
-        var st = state();
-        if (st === -1 || st === 5) holdPause = true;
-        player.seekTo(s, true);
-        return;
-      }
-      player.seekTo(s, true);
-      if (player.playVideo) player.playVideo();
-    }
-
-    /* ---------- play / pause (sheet header) ---------- */
-    var playBtn = $('[data-transcript-play]');
-    function syncPlay() {
-      if (!playBtn) return;
-      var on = state() === 1 || state() === 3;
-      playBtn.toggleAttribute('data-playing', on);
-      playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
-      playBtn.setAttribute('aria-disabled', String(!ready));
-    }
-    if (playBtn) {
-      if (!getIframe()) {
-        playBtn.style.display = 'none';
-      } else {
-        syncPlay();
-        playBtn.addEventListener('click', function () {
-          if (!ready) return;
-          holdPause = false;
-          if (state() === 1 || state() === 3) player.pauseVideo();
-          else player.playVideo();
-        });
-      }
+      engine.seek(s, !inDrawer());
     }
 
     /* Split a row's text into sentences and give each an estimated start,
@@ -331,7 +321,7 @@
       var span = row.querySelector('[data-t-text]');
       if (!span || span.childNodes.length !== 1 || span.firstChild.nodeType !== 3) return [];
       var text = span.firstChild.data;
-      var parts = text.match(/[^.!?]+(?:[.!?]+["'\u201d\u2019)\]]*|$)\s*/g);
+      var parts = text.match(/[^.!?]+(?:[.!?]+["'”’)\]]*|$)\s*/g);
       if (!parts || parts.length < 2) return [];
       var total = text.length, span2 = end === null ? total / 14 : end - start, done = 0, out = [];
       span.textContent = '';
@@ -391,7 +381,7 @@
       var row = null, sent = null, followed = null, synced = true, ownScrollUntil = 0;
       var mobile = matchMedia('(max-width: 991px)');
       var sheet = $('.media-secondary .media-transcript');
-      function playing() { var st = state(); return st === 1 || st === 3; }
+      function playing() { return engine.playing(); }
       // Tablet/phone with the sheet shut: the full transcript isn't on screen.
       function shut() { return mobile.matches && !(sheet && sheet.classList.contains('is-visible')); }
       function showSync() {
@@ -503,9 +493,9 @@
       var prevRow = null, prevNow = null;
       function mark(el, name, on) { if (el) el.toggleAttribute(name, on); }
       setInterval(function () {
-        if (!player || !ready || !player.getCurrentTime) return;
-        var t = player.getCurrentTime(),
+        var t = engine.time(),
           act = null;
+        if (t === null) return;
         for (var i = 0; i < cues.length; i++) {
           if (cues[i].s <= t + 0.3) act = cues[i];
           else break;
@@ -538,7 +528,7 @@
         // The sheet moves only when a new timestamped section starts,
         // bringing it to the top; within a section the box stays still and
         // only the sentence highlight moves.
-        if (state() === 1 && synced && row && row !== followed) {
+        if (engine.playing() && synced && row && row !== followed) {
           followed = row;
           follow(row);
         }
@@ -620,7 +610,7 @@
         var head = [title, [speakers, date.trim()].filter(Boolean).join(' · '), 'Christ the King Church', location.origin + location.pathname]
           .filter(Boolean).join('\n');
         var blob = new Blob([head + '\n\n' + plain() + '\n'], { type: 'text/plain;charset=utf-8' });
-        var slug = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'sermon';
+        var slug = title.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'sermon';
         var a = d.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = slug + '-transcript.txt';
@@ -707,14 +697,12 @@
       if (next) next.addEventListener('click', function () { go(at + 1); });
     }
 
-    if (d.readyState !== 'loading') {
+    function start() {
+      pickEngine();
       build();
-      api();
-    } else {
-      d.addEventListener('DOMContentLoaded', function () {
-        build();
-        api();
-      });
+      engine.start();
     }
+    if (d.readyState !== 'loading') start();
+    else d.addEventListener('DOMContentLoaded', start);
   })();
 </script>
