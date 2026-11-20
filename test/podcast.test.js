@@ -9,6 +9,7 @@ import {
   normalizeTitle,
   parseAppleEpisodes,
   parseSpotifyEpisodes,
+  speakerFromDescription,
   splitPodcastTitle,
   stripSeriesSuffix,
   titleSimilarity,
@@ -348,4 +349,46 @@ test('parseAppleEpisodes carries the episode id through', () => {
   });
   assert.equal(parsed.length, 1);
   assert.match(parsed[0].appleUrl, /\?i=1000999888777$/);
+});
+
+/* ---------------------------------------------------------------- *
+ * Speaker from the description (titles stopped naming the preacher)
+ * ---------------------------------------------------------------- */
+
+test('speakerFromDescription reads "Sermon by X on …" and "Exhortation by X, recorded …"', () => {
+  const names = ['Nathan Colestock', 'Brad Brosius', 'Clint Manley'];
+  assert.equal(
+    speakerFromDescription('Sermon by Nathan Colestock on Nehemiah 9, recorded on November 1, 2026. \nChrist the King Church', names),
+    'Nathan Colestock'
+  );
+  assert.equal(
+    speakerFromDescription('Exhortation by Brad Brosius, recorded on November 8, 2026.', names),
+    'Brad Brosius'
+  );
+  assert.equal(speakerFromDescription('Sermon by Clinton Manley on Psalm 1.', names), 'Clint Manley');
+});
+
+test('speakerFromDescription leaves unknown or absent names blank', () => {
+  const names = ['Nathan Colestock'];
+  assert.equal(speakerFromDescription('Sermon by Someone Else on John 3.', names), null);
+  assert.equal(speakerFromDescription('A conversation about worship.', names), null);
+  assert.equal(speakerFromDescription('', names), null);
+});
+
+test('matchEpisodes takes the speaker from the description when the title has none', () => {
+  const items = [{ id: 'i1', title: 'Confess the Real Story', durationSeconds: 2401, date: '2026-11-02' }];
+  const episodes = [{
+    guid: 'g1', title: 'Confess the Real Story', durationSeconds: 2400, date: '2026-11-01',
+    description: 'Sermon by Nathan Colestock on Nehemiah 9, recorded on November 1, 2026.',
+  }];
+  const { matches } = matchEpisodes(items, episodes, { speakers: SPEAKERS });
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].ep.speaker, 'Nathan Colestock');
+});
+
+test('parseAppleEpisodes keeps the description', () => {
+  const [ep] = parseAppleEpisodes({ results: [{
+    wrapperType: 'podcastEpisode', episodeGuid: 'g', trackName: 't', description: 'Sermon by A B on C.',
+  }] });
+  assert.equal(ep.description, 'Sermon by A B on C.');
 });
