@@ -358,3 +358,17 @@ rather than reaching for the accordion CSS; deleting the registered script
 outright is the only way to make it unrepeatable, and that is irreversible.
 
 > **Embeds:** files in `embeds/` are exactly what is deployed (comment-free). The annotated originals, with every explanation, are in `embeds/annotated/`; change both together.
+
+## Sunday at a different location
+
+The Home page's directions section (component `section-directions`) has two variants:
+**Usual location (JX Venue)** and **Alternate location**. For a Sunday elsewhere:
+
+1. Home → select the directions section → in its settings, fill the *Alternate location*
+   fields (Eyebrow, Headline, Venue, Address lines, Photo + alt text, Directions link —
+   a Google Maps directions URL) and set Variant to **Alternate location**. Publish.
+2. The other "Get Directions" buttons on the site (nav, heroes, footer) go to `/directions`,
+   a 301 redirect in Site settings → Publishing → 301 redirects. Point it at the alternate
+   address for that week too, and back afterwards.
+3. Optionally add an announcement bar.
+4. Afterwards set the Variant back to **Usual location**; the alternate fields stay filled.
