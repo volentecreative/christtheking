@@ -1,27 +1,38 @@
-// Livestream page: show the current Sunday stream, even though it's unlisted.
-// Asks livestream.christtheking.build (Cloudflare Worker, signed in to the CTK
-// YouTube channel) what's live. No API key in the browser, no search quota.
-(async function () {
-  const iframe  = document.getElementById('livestream-iframe');
-  const player  = document.querySelector('.livestream-player');
-  const offline = document.querySelector('.livestream-offline');
+// Livestream page: show the current stream (unlisted is fine) when one is live.
+// Asks livestream.christtheking.build, a Cloudflare Worker signed in to the CTK
+// YouTube channel. While not live, re-checks every minute so early arrivals see
+// the stream appear without refreshing.
+(function () {
+  var iframe = document.getElementById('livestream-iframe');
+  var player = document.querySelector('.livestream-player');
+  var offline = document.querySelector('.livestream-offline');
   if (!iframe || !player || !offline) return;
 
-  try {
-    const res = await fetch('https://livestream.christtheking.build/status', { cache: 'no-store' });
-    if (!res.ok) return console.error('Livestream lookup error:', res.status);
+  var RECHECK_MS = 60000;
+  var timer;
 
-    const { state, videoId } = await res.json();
-    if (state !== 'live' || !videoId) return console.log('No active livestream found.');
-
-    // Reveal before setting src so the player lays out correctly.
-    player.style.display  = 'block';
-    offline.style.display = 'none';
-
-    iframe.src =
-      `https://www.youtube.com/embed/${videoId}` +
-      `?autoplay=1&mute=1&controls=0&rel=0&playsinline=1`;
-  } catch (error) {
-    console.error('Livestream check failed:', error);
+  function check() {
+    fetch('https://livestream.christtheking.build/status', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (t) {
+        if (!t || t.state !== 'live' || !t.videoId) return schedule();
+        player.style.display = 'block';
+        offline.style.display = 'none';
+        iframe.src = 'https://www.youtube.com/embed/' + t.videoId +
+          '?autoplay=1&mute=1&controls=0&rel=0&playsinline=1';
+      })
+      .catch(schedule);
   }
+
+  function schedule() {
+    clearTimeout(timer);
+    if (!document.hidden) timer = setTimeout(check, RECHECK_MS);
+  }
+
+  // Don't poll from background tabs; check right away when the tab comes back.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && offline.style.display !== 'none') check();
+  });
+
+  check();
 })();

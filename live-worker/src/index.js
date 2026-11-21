@@ -25,11 +25,11 @@ export default {
     try {
       switch (url.pathname.replace(/\/+$/, '') || '/') {
         case '/':
-          return redirectTo(await currentTarget(env));
+          return redirectTo(await currentTarget(env, ctx));
         case '/embed':
-          return embedPage(await currentTarget(env), env);
+          return embedPage(await currentTarget(env, ctx), env);
         case '/status':
-          return json(await currentTarget(env));
+          return json(await currentTarget(env, ctx));
         case '/refresh':
           return refresh(url, env);
         case '/auth/start':
@@ -51,19 +51,38 @@ export default {
 // ---------------------------------------------------------------------------
 // What's live?
 
-// On demand: each request looks up what's live, except that once a live stream is
-// found its link is held in KV (global) for LIVE_TTL, so during a service visitors
-// share one lookup instead of each asking YouTube. /refresh clears it if the stream
-// restarts with a new video ID. "Nothing live" is not cached.
-const LIVE_TTL = 15 * 60;
+// On demand, any day of the week.
+// - A live stream's link is held in KV (global) for LIVE_TTL, so visitors share one
+//   lookup and a mid-stream restart (new video ID) heals itself within LIVE_TTL.
+//   /refresh clears it immediately.
+// - "Nothing live" is held OFFLINE_TTL in the edge cache. That caps YouTube quota use
+//   (~1 unit per OFFLINE_TTL per Cloudflare location) no matter how much traffic or bot
+//   noise arrives, while still noticing a stream start within OFFLINE_TTL.
+const LIVE_TTL = 5 * 60;
+const OFFLINE_TTL = 30;
+const OFFLINE_CACHE_KEY = 'https://cache.internal/ctk-live-offline';
 
-async function currentTarget(env) {
+async function currentTarget(env, ctx) {
   const live = await env.STATE.get('live_target', 'json');
   if (live) return live;
+
+  const cache = caches.default;
+  const cacheKey = new Request(OFFLINE_CACHE_KEY);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit.json();
 
   const target = await lookupTarget(env);
   if (target.state === 'live') {
     await env.STATE.put('live_target', JSON.stringify(target), { expirationTtl: LIVE_TTL });
+  } else if (target.state === 'offline') {
+    ctx.waitUntil(
+      cache.put(
+        cacheKey,
+        new Response(JSON.stringify(target), {
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${OFFLINE_TTL}` },
+        })
+      )
+    );
   }
   return target;
 }
@@ -106,6 +125,7 @@ async function refresh(url, env) {
     return new Response('Forbidden', { status: 403 });
   }
   await env.STATE.delete('live_target');
+  await caches.default.delete(new Request(OFFLINE_CACHE_KEY));
   const t = await lookupTarget(env);
   if (t.state === 'live') await env.STATE.put('live_target', JSON.stringify(t), { expirationTtl: LIVE_TTL });
   const msg = t.videoId
