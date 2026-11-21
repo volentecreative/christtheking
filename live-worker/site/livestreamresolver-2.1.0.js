@@ -1,6 +1,7 @@
 // Livestream page: show the current stream (unlisted is fine) when one is live.
 // Asks livestream.christtheking.build, a Cloudflare Worker signed in to the CTK
-// YouTube channel. While not live, re-checks every minute so early arrivals see
+// YouTube channel. Reveals .livestream-live-only (the Watch on YouTube button)
+// when live. While not live, re-checks every minute so early arrivals see
 // the stream appear without refreshing.
 (function () {
   var iframe = document.getElementById('livestream-iframe');
@@ -18,6 +19,11 @@
         if (!t || t.state !== 'live' || !t.videoId) return schedule();
         player.style.display = 'block';
         offline.style.display = 'none';
+        // "Watch on YouTube" button(s): hidden until live, then link straight to the stream.
+        document.querySelectorAll('.livestream-live-only').forEach(function (el) {
+          el.style.display = 'block';
+          el.querySelectorAll('a').forEach(function (a) { a.href = t.url; });
+        });
         iframe.src = 'https://www.youtube.com/embed/' + t.videoId +
           '?autoplay=1&mute=1&controls=0&rel=0&playsinline=1';
       })
