@@ -1,16 +1,7 @@
-<!-- Christ the King — Media Template page → HTML Embed "breadcrumb-handler"
-     (the embed with class .breadcrumb-handler, near the top of the page).
-     Page-level footer code cannot be written on this template through the
-     API, so the script lives in an embed. This file is its source of truth. -->
 <style>
-/* Series card header: "More in" and the series name wrap as whole words
-   beside the "All 16 →" link instead of being squeezed letter by letter. */
 .media-series_playlist .media-transcript_header > .horz-flex { flex-wrap: wrap; min-width: 0; }
-.media-series_playlist .media-transcript_header > .horz-flex > h3 { white-space: nowrap; }
-/* Breadcrumb overflow fades: one at each edge with crumbs hidden past it,
-   none at an edge the crumbs already reach (the script marks
-   [data-at-start] / [data-at-end]). Replaces the style panel's right-only
-   fade. */
+.media-series_playlist .media-transcript_header > .horz-flex > :is(h2, h3) { white-space: nowrap; }
+
 .breadcrumb {
   -webkit-mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
   mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
@@ -27,10 +18,7 @@
   -webkit-mask-image: none;
   mask-image: none;
 }
-/* Series playlist scroll fades, as on the transcript: a fade at each edge
-   with rows hidden past it, none at an edge the list already reaches (the
-   script marks [data-at-top] / [data-at-bottom]), so a short series that
-   fits shows no fade at all. */
+
 .media-series_body {
   -webkit-mask-image: linear-gradient(to bottom, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
   mask-image: linear-gradient(to bottom, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
@@ -47,97 +35,68 @@
   -webkit-mask-image: none;
   mask-image: none;
 }
-/* Each playlist row's meta: speakers (a nested Collection List) · divider
-   (.meta-divider) · date. The script picks which show by writing
-   data-meta="date", "speaker", or "speaker date" on the row; until it has,
-   the row shows its date alone. */
+
 [data-series-row]:not([data-meta~="speaker"]) [data-series-speakers],
 [data-series-row]:not([data-meta="speaker date"]) .meta-divider,
 [data-series-row][data-meta]:not([data-meta~="date"]) [data-series-date] {
   display: none;
 }
-/* Two speakers on one talk: "A and B"; three or more: "A, B, and C". */
+
 [data-series-speakers] .w-dyn-items { display: flex; flex-wrap: wrap; column-gap: 0.3em; }
 [data-series-speakers] .w-dyn-item:not(:last-child) > *::after { content: ","; }
 [data-series-speakers] .w-dyn-item:first-child:nth-last-child(2) > *::after { content: none; }
 [data-series-speakers] .w-dyn-item:last-child:not(:first-child) > *::before { content: "and "; }
 </style>
 <script>
-/* ===========================================================================
-   Media item page. Two jobs, both of which the style panel genuinely can't do.
-
-   1. Breadcrumb filter links (and its overflow fades, below). Each crumb's label comes from a CMS field and the
-      href is built from it, so a new Type option or Media Series links to the
-      right filter with no per-item filter-URL field. Webflow cannot concatenate
-      a query string, and an Option field cannot be bound to a link at all.
-
-   2. Series position. "3 of 11", "All 11", and the row numbers in the series
-      playlist are all counted from the playlist itself. There is deliberately
-      no "part number" CMS field to keep in sync: add a sermon to a series and
-      everything renumbers on its own. Order is the Date field. The same
-      count drives the series Previous / Next links ([data-series-prev],
-      [data-series-next]), and hides the date-order nav ([data-date-nav],
-      Finsweet previous-item / next-item) when the item is in a series. The
-      current row gets .is-active and is centred in the playlist's scroll box.
-      Under each title: the date while one speaker gives the whole series; once
-      speakers differ, the speaker - with the date too, unless the series
-      happened within a week (a conference), where the date tells talks apart
-      no better than the number does.
-   Source of truth: webflow/embeds/media-template-crumbs-and-series.html in the repo.
-   =========================================================================== */
-(function () {
+(function() {
   'use strict';
-
-  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-  var path = function (p) { return String(p || '').replace(/\/+$/, ''); };
-
+  var pad = function(n) {
+    return (n < 10 ? '0' : '') + n;
+  };
+  var path = function(p) {
+    return String(p || '').replace(/\/+$/, '');
+  };
   function crumbs() {
-    document.querySelectorAll('[data-crumb-filter]').forEach(function (crumb) {
+    document.querySelectorAll('[data-crumb-filter]').forEach((function(crumb) {
       var field = crumb.getAttribute('data-crumb-filter');
-      /* Take the value from the marked child when there is one. The series
-         crumb is a chip - thumbnail, series name, "3 of 11" - so its own
-         textContent reads "Congregational Worship3 of 11" and would build a
-         filter that matches nothing. */
       var src = crumb.querySelector('[data-crumb-value]') || crumb;
       var value = (src.textContent || '').trim();
-      crumb.href = value
-        ? '/media?' + field + '_equal=' + encodeURIComponent(value)
-        : '/media';
-    });
+      crumb.href = value ? '/media?' + field + '_equal=' + encodeURIComponent(value) : '/media';
+    }));
   }
-
   function crumbFades() {
-    document.querySelectorAll('.breadcrumb').forEach(function (bar) {
-      var mark = function () {
+    document.querySelectorAll('.breadcrumb').forEach((function(bar) {
+      var mark = function() {
         var max = bar.scrollWidth - bar.clientWidth;
         bar.toggleAttribute('data-at-start', bar.scrollLeft <= 1);
         bar.toggleAttribute('data-at-end', bar.scrollLeft >= max - 1);
       };
       mark();
-      bar.addEventListener('scroll', mark, { passive: true });
+      bar.addEventListener('scroll', mark, {
+        passive: true
+      });
       window.addEventListener('resize', mark);
-    });
+    }));
   }
-
   function listFades() {
-    document.querySelectorAll('.media-series_body').forEach(function (box) {
-      var mark = function () {
+    document.querySelectorAll('.media-series_body').forEach((function(box) {
+      var mark = function() {
         var max = box.scrollHeight - box.clientHeight;
         box.toggleAttribute('data-at-top', box.scrollTop <= 1);
         box.toggleAttribute('data-at-bottom', box.scrollTop >= max - 1);
       };
       mark();
-      box.addEventListener('scroll', mark, { passive: true });
+      box.addEventListener('scroll', mark, {
+        passive: true
+      });
       window.addEventListener('resize', mark);
-    });
+    }));
   }
-
   function series() {
     var rows = Array.prototype.slice.call(document.querySelectorAll('[data-series-row]'));
     if (!rows.length) return;
-
     var here = path(location.pathname);
-    var items = rows.map(function (row, i) {
+    var items = rows.map((function(row, i) {
       var link = row.querySelector('a[href]');
       var when = row.querySelector('[data-series-date]');
       return {
@@ -146,62 +105,55 @@
         current: !!link && path(link.pathname) === here,
         time: when ? Date.parse(when.textContent.trim()) : NaN
       };
-    });
-
-    /* Date order is series order. If any date fails to parse, keep the
-       Collection List's own order rather than shuffling rows at random. */
-    var dated = items.every(function (it) { return !isNaN(it.time); });
-    if (dated) items.sort(function (a, b) { return a.time - b.time || a.order - b.order; });
-
+    }));
+    var dated = items.every((function(it) {
+      return !isNaN(it.time);
+    }));
+    if (dated) items.sort((function(a, b) {
+      return a.time - b.time || a.order - b.order;
+    }));
     var index = -1;
-    items.forEach(function (it, n) { if (it.current) index = n; });
+    items.forEach((function(it, n) {
+      if (it.current) index = n;
+    }));
     var listed = index !== -1;
     var total = items.length;
-
     if (!listed) {
-      /* The playlist filters this item out, so it is one row short and this
-         item's own slot has to be placed by date. */
       var mark = document.querySelector('[data-current-date]');
       var now = mark ? Date.parse(mark.textContent.trim()) : NaN;
       total = items.length + 1;
       index = 0;
-      if (dated && !isNaN(now)) items.forEach(function (it) { if (it.time < now) index++; });
+      if (dated && !isNaN(now)) items.forEach((function(it) {
+        if (it.time < now) index++;
+      }));
     }
-
-    /* Speaker or date under each title (see the header). */
-    var who = function (it) {
-      return Array.prototype.map.call(it.row.querySelectorAll('[data-series-speakers] .w-dyn-item'), function (n) {
+    var who = function(it) {
+      return Array.prototype.map.call(it.row.querySelectorAll('[data-series-speakers] .w-dyn-item'), (function(n) {
         return n.textContent.trim();
-      }).filter(Boolean).join(', ');
+      })).filter(Boolean).join(', ');
     };
     var names = items.map(who);
-    var mine = Array.prototype.map.call(document.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) {
+    var mine = Array.prototype.map.call(document.querySelectorAll('.media-byline .contributor_content > :first-child'), (function(n) {
       return n.textContent.trim();
-    }).filter(Boolean).join(', ');
-    var mixed = names.concat(listed ? [] : [mine]).filter(function (n, i, all) {
+    })).filter(Boolean).join(', ');
+    var mixed = names.concat(listed ? [] : [ mine ]).filter((function(n, i, all) {
       return n && all.indexOf(n) === i;
-    }).length > 1;
-    var times = items.map(function (it) { return it.time; });
+    })).length > 1;
+    var times = items.map((function(it) {
+      return it.time;
+    }));
     var event = dated && Math.max.apply(null, times) - Math.min.apply(null, times) <= 7 * 864e5;
-    items.forEach(function (it, n) {
+    items.forEach((function(it, n) {
       var show = !mixed || !names[n] ? 'date' : event ? 'speaker' : 'speaker date';
       it.row.setAttribute('data-meta', show);
-    });
-
-    items.forEach(function (it, n) {
+    }));
+    items.forEach((function(it, n) {
       var label = it.row.querySelector('[data-series-index]');
       if (label) label.textContent = pad((listed || n < index ? n : n + 1) + 1);
-    });
-
-    /* Show the rows newest first, in number order. The Collection List sorts by
-       date only, so talks given on the same day (a conference) come out
-       oldest first among themselves - 06, 07, 01, 02... - and need re-laying. */
-    if (dated) items.slice().reverse().forEach(function (it) { it.row.parentNode.appendChild(it.row); });
-
-    /* The row being watched gets .is-active - the site's active-item pattern,
-       as on the jump menu's .sticky-menu-nav-item.is-active: surface
-       background and gold text, no border (style panel) - and is scrolled to the
-       middle of the playlist box. The box is scrolled directly - scrollIntoView would move the whole page too. */
+    }));
+    if (dated) items.slice().reverse().forEach((function(it) {
+      it.row.parentNode.appendChild(it.row);
+    }));
     if (listed) {
       var row = items[index].row;
       row.classList.add('is-active');
@@ -211,25 +163,20 @@
         box.scrollTop += row.getBoundingClientRect().top - box.getBoundingClientRect().top - (box.clientHeight - row.offsetHeight) / 2;
       }
     }
-
-    document.querySelectorAll('[data-series-count]').forEach(function (el) {
-      el.textContent = (index + 1) + ' of ' + total;
-    });
-    document.querySelectorAll('[data-series-total]').forEach(function (el) {
+    document.querySelectorAll('[data-series-count]').forEach((function(el) {
+      el.textContent = index + 1 + ' of ' + total;
+    }));
+    document.querySelectorAll('[data-series-total]').forEach((function(el) {
       el.textContent = 'All ' + total;
-    });
-
-    /* Previous / next within the series: "13 · Beware Men Like Tobiah". The
-       earlier part is Previous. At either end that side keeps its place but
-       is hidden, so the other one doesn't jump across the bar. */
+    }));
     var before = items[index - 1];
     var after = listed ? items[index + 1] : items[index];
-    var partOf = function (it) {
+    var partOf = function(it) {
       var n = items.indexOf(it);
       return (listed || n < index ? n : n + 1) + 1;
     };
-    [['[data-series-prev]', before, 'Previous'], ['[data-series-next]', after, 'Next']].forEach(function (side) {
-      document.querySelectorAll(side[0]).forEach(function (a) {
+    [ [ '[data-series-prev]', before, 'Previous' ], [ '[data-series-next]', after, 'Next' ] ].forEach((function(side) {
+      document.querySelectorAll(side[0]).forEach((function(a) {
         var it = side[1];
         var to = it && it.row.querySelector('a[href]');
         if (!to) {
@@ -246,34 +193,40 @@
         a.setAttribute('aria-label', side[2] + ' in series: part ' + part + (title ? ', ' + title : ''));
         var label = a.querySelector('[data-series-label]');
         if (label) label.textContent = pad(part) + (title ? ' · ' + title : '');
-      });
-    });
+      }));
+    }));
     if (total < 2) {
-      document.querySelectorAll('[data-series-prev], [data-series-next]').forEach(function (a) {
+      document.querySelectorAll('[data-series-prev], [data-series-next]').forEach((function(a) {
         if (a.parentElement) a.parentElement.style.display = 'none';
-      });
+      }));
     }
-
-    /* A sermon in a series gets the series buttons above; the date-order
-       Previous / Next at the foot of the page is only for one-offs. */
-    document.querySelectorAll('[data-date-nav]').forEach(function (el) { el.style.display = 'none'; });
-    return { total: total, index: index };
+    document.querySelectorAll('[data-date-nav]').forEach((function(el) {
+      el.style.display = 'none';
+    }));
+    return {
+      total: total,
+      index: index
+    };
   }
-
-  /* "All 16 →" in the series card goes where the series chip goes: the
-     media list filtered to this series (there's no series page of its own). */
   function seriesLink(total) {
     var chip = document.querySelector('[data-crumb-filter="series"]');
     var name = chip && chip.querySelector('[data-crumb-value]');
-    document.querySelectorAll('[data-series-link]').forEach(function (a) {
-      if (!chip || !name || !name.textContent.trim()) { a.style.display = 'none'; return; }
+    document.querySelectorAll('[data-series-link]').forEach((function(a) {
+      if (!chip || !name || !name.textContent.trim()) {
+        a.style.display = 'none';
+        return;
+      }
       a.href = chip.getAttribute('href');
       a.setAttribute('aria-label', 'View all ' + (total ? total + ' ' : '') + 'in ' + name.textContent.trim());
-    });
+    }));
   }
-
-  function init() { crumbs(); crumbFades(); var s = series(); seriesLink(s ? s.total : 0); listFades(); }
-
+  function init() {
+    crumbs();
+    crumbFades();
+    var s = series();
+    seriesLink(s ? s.total : 0);
+    listFades();
+  }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

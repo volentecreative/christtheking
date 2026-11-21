@@ -356,3 +356,5 @@ each FAQ row on one click and they cancel out: the rows open and will not
 close. That is what happened on Sundays. If it reappears, remove it again
 rather than reaching for the accordion CSS; deleting the registered script
 outright is the only way to make it unrepeatable, and that is irreversible.
+
+> **Embeds:** files in `embeds/` are exactly what is deployed (comment-free). The annotated originals, with every explanation, are in `embeds/annotated/`; change both together.
