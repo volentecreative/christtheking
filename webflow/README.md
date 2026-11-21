@@ -7,8 +7,8 @@ in the Designer.
 
 | File | Where it goes |
 | --- | --- |
-| `site-head.html` | Site settings → Custom code → **Head** |
-| `site-footer.html` | Site settings → Custom code → **Footer** |
+| `site-head.html` | Site settings → Custom code → **Head** (comment-free; the annotated copy and the why behind each block are in `CUSTOM-CODE.md`) |
+| `site-footer.html` | Site settings → Custom code → **Footer** (comment-free; annotated copy in `CUSTOM-CODE.md`) |
 | `redirects.csv` | Site settings → Publishing → **301 redirects**, before launch: every page in christtheking.build's sitemap (the old Subsplash site) mapped to its new home. `/give`, `/resources`, `/sermons` and `/exhortations` need no entry — the first two keep their paths, the last two already redirect. |
 | `registered/navbar-speaker-names.js` | Site settings → Custom code → **Registered scripts**, as `navbarSpeakerNames` |
 | `registered/image-sizes-fix.js` | Site settings → Custom code → **Registered scripts**, as `imageSizesFix` 1.0.0, applied site-wide in the **header** (same script The North Church runs as `tnc_image_sizes_fix`). Webflow writes `sizes="100vw"` on responsive images, so phones download the full-width variant for a 358px card; this sets `sizes` to the image's real rendered width (or its larger side for `object-fit: cover`) before the request, including CMS items added later. Only affects images that have a `srcset` — CMS images in Collection Lists usually don't, so it can't help those. **Caveat:** an image inside a shrink-to-fit wrapper (no width, only a max-width) gets its width *from* `sizes`, so it gets measured before it loads (~48px) and then locks at that size. Give the wrapper a width — 2026-11-20 the homepage JX Venue photo did this until `.location_wrap` got `width: 100%`. |

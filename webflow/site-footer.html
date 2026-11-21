@@ -1,22 +1,4 @@
-<!-- Christ the King — Site settings → Custom code → FOOTER
-     Post-narthex-migration state. See narthex docs/migration-christtheking.md.
-
-     What used to be here and is now narthex:
-       - the ~200-line modal/drawer IIFE (data-modal-open, data-modal-close,
-         .modal-dim, ?modal= deep links, swipe-to-dismiss)
-         → the modal module, via vci-modal="dialog|open|close|dim|title"
-     Also retired alongside it: the applied registered script
-     "faq_accordion_toggle" → the accordion module. It must stay retired: with
-     both engines applied, each FAQ row is toggled twice per click and will
-     not close.
-
-     What is left is presentation, and stays. -->
-
-<!-- Pin a tag that exists. jsDelivr resolves @<tag> against the repo's git
-     tags and 404s anything else — silently, as far as the page is concerned:
-     no narthex, so no mobile menu. v0.2.0 was the example version in the
-     narthex README's release section and was never cut; the tags are v0.1.0,
-     v0.1.1, v0.4.0, v0.5.0, v0.5.1, v0.5.2. -->
+<!-- Christ the King: site-wide FOOTER code. Readable source and notes: github.com/volentecreative/christtheking, webflow/site-footer.html + webflow/CUSTOM-CODE.md -->
 <script src="https://cdn.jsdelivr.net/gh/volentecreative/narthex@v0.5.2/dist/narthex.min.js"
         vci-scroll="native"
         vci-scroll-offset="calc(var(--nav-height, 4.5rem) + 1.5rem)"></script>
@@ -24,7 +6,6 @@
 <script>
 (() => {
   const style = document.createElement('style');
-
   style.textContent = `
     .parallax-5,
     .parallax-10,
@@ -69,10 +50,6 @@
       }
     }
 
-    /* No parallax on phones (Webflow's mobile breakpoints, 767px down):
-       the image sits still and fills the hero. !important because the hero
-       component carries its own copy of the rules above (.parallax-handler
-       embed), injected earlier, and this must win over both. */
     @media (max-width: 767px) {
       .parallax-5,
       .parallax-10,
@@ -83,27 +60,11 @@
       }
     }
   `;
-
   document.head.appendChild(style);
 })();
 </script>
 
 <style>
-/* Nav dropdowns opening AND closing, in place of the deleted Interactions.
-
-   Webflow's dropdown JS is left alone: it toggles w--open and nothing else.
-   What made the close instant is its `.w-dropdown-list { display: none }` —
-   the element stops being rendered the moment the class comes off, so there
-   is nothing left to animate. `transition-behavior: allow-discrete` is the
-   answer: display still flips, but not until the rest of the transition has
-   finished, so the list is on screen for the whole way out.
-
-   Desktop fades. Below 992px the list is `position: static` in the flow of the
-   mobile panel, where the same appearance has to be a slide: a 0fr → 1fr grid
-   row animates to a height nobody has measured. The collapsed values sit on
-   :not(.w--open) so the open state says nothing about padding or border, and
-   the Designer's own values are what it animates back to — nothing from the
-   style panel is copied into this file to drift out of date. */
 @media (min-width: 992px) {
   .nav_dropdown-list.w-dropdown-list {
     opacity: 0;
@@ -118,23 +79,14 @@
     .nav_dropdown-list.w-dropdown-list.w--open { opacity: 0; }
   }
 
-  /* The fade is for the first open and the last close only. Moving from one
-     item to the next, Webflow opens the new list and closes the old in the
-     same moment; fading the old one out kept both on screen, and Learn's
-     full-width list, later in the DOM, covered Connect's while it faded in.
-     While another list is open, a closing one goes at once. */
   .navbar_menu:has(.w-dropdown-list.w--open) .nav_dropdown-list.w-dropdown-list:not(.w--open) {
     transition: none;
   }
 
-  /* A list on its way out never catches the cursor (which could reopen it)
-     or covers the open one. */
   .nav_dropdown-list.w-dropdown-list:not(.w--open) { pointer-events: none; }
   .nav_dropdown-list.w-dropdown-list.w--open { z-index: 2; }
 }
 
-/* The chevron flips at every width: the mobile menu's toggles get w--open
-   from the same dropdown JS as desktop's. */
 .navbar_dropdown-toggle .chevron_down {
   transition: transform 200ms ease-out;
 }
@@ -143,9 +95,6 @@
   transform: rotate(180deg);
 }
 
-/* Mobile easing front-loads the motion so a tap answers at once: opening one
-   item closes the other, and with plain ease-out both crawled through their
-   first frames together. */
 @media (max-width: 991px) {
   .navbar_dropdown-toggle .chevron_down {
     transition: transform 240ms cubic-bezier(.22, 1, .36, 1);
@@ -171,9 +120,6 @@
     grid-template-rows: 1fr;
   }
 
-  /* Coming out of display:none there is no before-state to transition from,
-     so the opening slide needs its start written out. Only zeros here — the
-     end of the slide is still whatever the Designer computes. */
   @starting-style {
     .nav_dropdown-list.w-dropdown-list.w--open {
       grid-template-rows: 0fr;
@@ -184,11 +130,6 @@
     }
   }
 
-  /* A row can only collapse if what sits in it may be clipped — and only as
-     far as its own padding allows. The link list carries 12px top and bottom,
-     which held the closing row at 24px (a strip of the list's background) and
-     then let it snap to nothing when display flipped. Its padding slides to
-     zero with the row. */
   .nav_dropdown-list.w-dropdown-list > * {
     overflow: hidden;
     min-height: 0;
@@ -208,13 +149,6 @@
   }
 }
 
-/* Full-width buttons where a phone has a whole row to give them: the mobile
-   menu's Connect / Get directions bar, and a filter drawer's Clear filters /
-   Apply pair. The button component is fit-content everywhere else, so this is
-   scoped by container rather than set on the component's own classes. Two
-   buttons share a row while each keeps 10rem; narrower than that they stack.
-   (In the drawer each button sits in a wrapper carrying its behaviour:
-   fs-list-element="clear" or vci-modal="close".) */
 @media (max-width: 991px) {
   .filter-drawer_component .button-wrap {
     flex-wrap: nowrap;
@@ -247,128 +181,87 @@
 </style>
 
 <script>
-/* Hold the list's open box for the length of the close fade.
-
-   The Designer owns the list's position in both states, and the two differ:
-   the base style and the Open state can each set their own left/right. The
-   fade-out runs after w--open comes off, so for those 200ms the list would
-   wear the base geometry while still visible — a jump before the fade.
-
-   Nothing here decides where the list goes. On open, the values the Designer
-   computed are read; on close, they are written back inline for the
-   transition and removed when it ends. Change alignment in the Designer. */
 (() => {
   const desktop = matchMedia('(min-width: 992px)');
-  const PROPS = ['top', 'right', 'bottom', 'left', 'transform'];
-
-  document.querySelectorAll('.nav_dropdown-list.w-dropdown-list').forEach((list) => {
+  const PROPS = [ 'top', 'right', 'bottom', 'left', 'transform' ];
+  document.querySelectorAll('.nav_dropdown-list.w-dropdown-list').forEach((list => {
     let open = list.classList.contains('w--open');
     let held = null;
     let timer = 0;
-
-    /* transitionend bubbles, and every link inside the list has its own 200ms
-       hover transition. Ending the hold on any of them drops the geometry at
-       whatever moment the pointer last crossed a link, which is the jump this
-       exists to prevent. Only the list's own opacity fade counts. release() is
-       also called bare on open and by the timer below, so no event at all
-       still means release now. */
-    const release = (event) => {
+    const release = event => {
       if (event && (event.target !== list || event.propertyName !== 'opacity')) return;
       clearTimeout(timer);
-      PROPS.forEach((prop) => list.style.removeProperty(prop));
+      PROPS.forEach((prop => list.style.removeProperty(prop)));
       list.removeEventListener('transitionend', release);
     };
-
-    new MutationObserver(() => {
+    new MutationObserver((() => {
       const now = list.classList.contains('w--open');
       if (now === open) return;
       open = now;
       if (!desktop.matches) return;
-
       if (now) {
         release();
         const cs = getComputedStyle(list);
-        held = PROPS.map((prop) => cs.getPropertyValue(prop));
+        held = PROPS.map((prop => cs.getPropertyValue(prop)));
       } else if (held) {
-        PROPS.forEach((prop, i) => list.style.setProperty(prop, held[i]));
+        PROPS.forEach(((prop, i) => list.style.setProperty(prop, held[i])));
         list.addEventListener('transitionend', release);
         timer = setTimeout(release, 400);
       }
-    }).observe(list, { attributes: true, attributeFilter: ['class'] });
-  });
+    })).observe(list, {
+      attributes: true,
+      attributeFilter: [ 'class' ]
+    });
+  }));
 })();
 </script>
 
 <script>
-/* Close the nav dropdown when one of its links is clicked (desktop).
-
-   Webflow's hover dropdown closes when the pointer leaves it, and a link that
-   loads a new page takes the open state with it. But Contact (a mailto: link)
-   and Sing Your Part (a new tab) leave this page where it is, with the list
-   still open under the pointer. And a page restored by Back comes out of the
-   browser's back/forward cache exactly as it was left - dropdown open.
-   'w-close' is Webflow's own close event, so its classes and aria-expanded are
-   reset the way its JS does it, and hovering the menu again opens it as usual. */
 (() => {
   const close = () => {
     if (window.jQuery) jQuery('.navbar_menu .w-dropdown').trigger('w-close');
   };
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', (e => {
     if (e.target.closest('.nav_dropdown-list a[href]') && matchMedia('(min-width: 992px)').matches) close();
-  });
-  window.addEventListener('pageshow', (e) => { if (e.persisted) close(); });
+  }));
+  window.addEventListener('pageshow', (e => {
+    if (e.persisted) close();
+  }));
 })();
 </script>
 
 <script>
-/* Media card dates: the year appears once a date is more than twelve months
-   old. "Sep 1" is this year's; "Sep 1, 2025" is last year's.
-
-   The Designer cannot do date arithmetic, so the card carries two copies of
-   its Date: the visible one, formatted without a year, and a hidden one with
-   the year (the "Sort date" prop, which Finsweet also sorts the media list
-   on). This reads the hidden copy, and when it is older than the cutoff
-   appends its year to the visible text. Nothing else about the format is
-   touched, so the Designer still owns how the date reads.
-
-   Cards arrive after load too - Finsweet's infinite load on the media page -
-   so a MutationObserver picks up new ones. Each card is stamped once. */
 (() => {
   const MONTHS = 12;
-
   const cutoff = () => {
-    const d = new Date();
+    const d = new Date;
     d.setMonth(d.getMonth() - MONTHS);
     return d;
   };
-
-  const stamp = (el) => {
+  const stamp = el => {
     el.setAttribute('data-media-date-stamped', '');
-
     let scope = el.parentElement;
     let full = null;
     while (scope && !(full = scope.querySelector('[data-media-date-full]'))) {
       scope = scope.parentElement;
     }
     if (!full) return;
-
     const when = new Date(full.textContent.trim());
     if (isNaN(when) || when >= cutoff()) return;
-
     const year = String(when.getFullYear());
     const text = el.textContent.trim();
     if (text && text.indexOf(year) === -1) el.textContent = text + ', ' + year;
   };
-
   const run = () => {
     document.querySelectorAll('[data-media-date]:not([data-media-date-stamped])').forEach(stamp);
   };
-
   const start = () => {
     run();
-    new MutationObserver(run).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(run).observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   };
-
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start);
   } else {
@@ -378,32 +271,6 @@
 </script>
 
 <style>
-/* Mobile menu: the hamburger becomes a close icon, and the dim takes taps.
-
-   Both halves are narthex's doing — it puts its open class on the toggle and
-   on the vci-nav="dim" element alongside the menu, and a click on the dim
-   closes the menu with no code here. All that is left is what the Designer's
-   style panel cannot say: pointer-events, and a descendant selector for the
-   two bars.
-
-   The bars are 3px tall with a 0.5rem gap, so half the distance between their
-   centres is 0.25rem + 1.5px — that is what each has to travel to meet in the
-   middle before rotating.
-
-   The dim's own geometry is in the Designer. Two values there are load-bearing
-   and easy to lose:
-
-     top at medium = var(--nav-offset, 6rem), narthex's live measurement of the
-       header's bottom edge, which drops as the announcement bar scrolls away.
-       A fixed number cannot work — 6rem sits 42px above that edge while the
-       bar is still on screen, which is the dim creeping over the header.
-
-     z-index: -1, which keeps the dim behind the panel no matter where it sits
-       in nav.navbar. Without it the dim only stays behind while it is the
-       first child, and a backdrop that paints last covers the menu, its
-       dropdowns and every link in it — the whole panel stops taking taps. It
-       still catches taps below the panel, which is what closes the menu: the
-       negative index is below the header's own content, not below the page. */
 [vci-nav="dim"] {
   pointer-events: none;
 }
@@ -412,15 +279,6 @@
   pointer-events: auto;
 }
 
-/* The panel itself. The Designer opens it by animating max-height and
-   min-height (0 → the viewport below the header) under `transition: all`,
-   and steps padding-top 0 → 1rem as it goes — a layout pass on every frame
-   and a jump at the start, which is the jank. Here it keeps its open size
-   while shut and is revealed instead: clip-path wipes it down from the header,
-   with a short fade and a 0.5rem settle, all paint/compositor work. The sizes
-   are the same values the Designer gives .navbar_menu.is-open. visibility
-   waits for the wipe to finish on close, then takes the shut panel out of the
-   tab order and away from taps. */
 @media (max-width: 991px) {
   .navbar_menu {
     min-height: calc(100dvh - var(--nav-offset, 6rem));
@@ -466,9 +324,6 @@
 </style>
 
 <style>
-/* The Turnstile widget's wrapper div, hidden without removing it from the form.
-   The closing brace was missing in the live block — browsers recover at the end
-   of a stylesheet, so it worked, but nothing may be appended after it. */
 .media-filter-form > div:has([name="cf-turnstile-response"]) {
   position: absolute;
   width: 0;
