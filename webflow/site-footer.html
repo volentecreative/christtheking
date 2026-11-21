@@ -68,6 +68,20 @@
         transform: none;
       }
     }
+
+    /* No parallax on phones (Webflow's mobile breakpoints, 767px down):
+       the image sits still and fills the hero. !important because the hero
+       component carries its own copy of the rules above (.parallax-handler
+       embed), injected earlier, and this must win over both. */
+    @media (max-width: 767px) {
+      .parallax-5,
+      .parallax-10,
+      .parallax-20 {
+        animation: none !important;
+        transform: none !important;
+        will-change: auto;
+      }
+    }
   `;
 
   document.head.appendChild(style);
