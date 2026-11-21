@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { speakerText } from './lib/parse.js';
-import { matchEpisodes, parseAppleEpisodes, parseSpotifyEpisodes } from './lib/podcast.js';
+import { correctedDate, matchEpisodes, parseAppleEpisodes, parseSpotifyEpisodes } from './lib/podcast.js';
 import { WebflowClient } from './lib/webflow.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -290,6 +290,12 @@ async function main() {
         patch[field] = value;
       }
     }
+
+    // Date: fill a blank one, or replace a YouTube upload stamp that trails
+    // the service (see correctedDate). A date on or before the recording day
+    // was set by hand and is left alone.
+    const fixedDate = correctedDate(data.date, match.ep.description);
+    if (fixedDate) patch.date = fixedDate;
 
     // Speaker: fill only when blank, never overwrite a human's choice.
     let speakerNote = '';

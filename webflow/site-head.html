@@ -199,3 +199,61 @@ html {
 <script>
 document.addEventListener('touchstart', function () {}, { passive: true });
 </script>
+
+<!-- ===========================================================
+     AUDIT FIXES 2026-11-20 (Claude, approved by Josh)
+       1. Empty transcript: hide the transcript panel (desktop sidebar /
+          phone drawer) and its preview box when the item has no
+          transcript yet. Why custom code: visibility can only bind to a
+          Switch field through the API, and Webflow marks an empty bound
+          Rich Text with .w-dyn-bind-empty, which only a :has() selector
+          can see from the panel. Transcripts arrive later (YouTube
+          blocks captions from CI), so the panel comes back by itself.
+       2. Checkboxes (Connect form, Media/Study Tools filter dropdowns):
+          the unchecked box was the browser's white default on the dark
+          inputs. appearance:none and the ::before check mark can't be
+          set in the style panel. Border is text-03, not border-02, so
+          the box keeps 3:1 contrast against the background. The Type
+          pills (.is-pills) are hidden inputs and are left alone.
+     =========================================================== -->
+<style>
+.media-content_wrap:has([data-transcript].w-dyn-bind-empty) :is(.media-secondary, [data-transcript-preview]) {
+  display: none !important;
+}
+
+.form_checkbox-input,
+.media-filters_checkbox:not(.is-pills) {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  border: 2px solid var(--_theme---text-03);
+  border-radius: .25rem;
+  background-color: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.form_checkbox-input:checked,
+.media-filters_checkbox:not(.is-pills):checked {
+  background-color: var(--_theme---accent-01);
+  border-color: var(--_theme---accent-01);
+}
+.form_checkbox-input:checked::before,
+.media-filters_checkbox:not(.is-pills):checked::before {
+  content: "";
+  width: .6rem;
+  height: .6rem;
+  background-color: var(--_theme---background-01);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+.form_checkbox-input:focus-visible,
+.media-filters_checkbox:not(.is-pills):focus-visible {
+  outline: 2px solid var(--_theme---accent-01);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .form_checkbox-input:hover,
+  .media-filters_checkbox:not(.is-pills):hover {
+    border-color: var(--_theme---accent-01);
+  }
+}
+</style>

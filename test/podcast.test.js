@@ -3,12 +3,15 @@ import test from 'node:test';
 
 import {
   appleEpisodeUrl,
+  correctedDate,
+  recordedFromDescription,
   daysApart,
   findSpeaker,
   matchEpisodes,
   normalizeTitle,
   parseAppleEpisodes,
   parseSpotifyEpisodes,
+  speakerFromDescription,
   splitPodcastTitle,
   stripSeriesSuffix,
   titleSimilarity,
@@ -348,4 +351,86 @@ test('parseAppleEpisodes carries the episode id through', () => {
   });
   assert.equal(parsed.length, 1);
   assert.match(parsed[0].appleUrl, /\?i=1000999888777$/);
+});
+
+/* ---------------------------------------------------------------- *
+ * Speaker from the description (titles stopped naming the preacher)
+ * ---------------------------------------------------------------- */
+
+test('speakerFromDescription reads "Sermon by X on …" and "Exhortation by X, recorded …"', () => {
+  const names = ['Nathan Colestock', 'Brad Brosius', 'Clint Manley'];
+  assert.equal(
+    speakerFromDescription('Sermon by Nathan Colestock on Nehemiah 9, recorded on November 1, 2026. \nChrist the King Church', names),
+    'Nathan Colestock'
+  );
+  assert.equal(
+    speakerFromDescription('Exhortation by Brad Brosius, recorded on November 8, 2026.', names),
+    'Brad Brosius'
+  );
+  assert.equal(speakerFromDescription('Sermon by Clinton Manley on Psalm 1.', names), 'Clint Manley');
+});
+
+test('speakerFromDescription leaves unknown or absent names blank', () => {
+  const names = ['Nathan Colestock'];
+  assert.equal(speakerFromDescription('Sermon by Someone Else on John 3.', names), null);
+  assert.equal(speakerFromDescription('A conversation about worship.', names), null);
+  assert.equal(speakerFromDescription('', names), null);
+});
+
+test('matchEpisodes takes the speaker from the description when the title has none', () => {
+  const items = [{ id: 'i1', title: 'Confess the Real Story', durationSeconds: 2401, date: '2026-11-02' }];
+  const episodes = [{
+    guid: 'g1', title: 'Confess the Real Story', durationSeconds: 2400, date: '2026-11-01',
+    description: 'Sermon by Nathan Colestock on Nehemiah 9, recorded on November 1, 2026.',
+  }];
+  const { matches } = matchEpisodes(items, episodes, { speakers: SPEAKERS });
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].ep.speaker, 'Nathan Colestock');
+});
+
+test('parseAppleEpisodes keeps the description', () => {
+  const [ep] = parseAppleEpisodes({ results: [{
+    wrapperType: 'podcastEpisode', episodeGuid: 'g', trackName: 't', description: 'Sermon by A B on C.',
+  }] });
+  assert.equal(ep.description, 'Sermon by A B on C.');
+});
+
+/* ---------------------------------------------------------------- *
+ * Service date from the description (YouTube stamps trail batch uploads)
+ * ---------------------------------------------------------------- */
+
+const SERMON = 'Sermon by Andy Naselli on 1 Corinthians 14, recorded on October 25, 2026. \nChrist the King Church';
+const EXHORT = 'Exhortation by Grant Colestock, recorded on October 25, 2026.';
+
+test('recordedFromDescription reads the day and the kind', () => {
+  assert.deepEqual(recordedFromDescription(SERMON), { day: '2026-10-25', kind: 'sermon' });
+  assert.deepEqual(recordedFromDescription(EXHORT), { day: '2026-10-25', kind: 'exhortation' });
+  assert.deepEqual(recordedFromDescription('Sermon by A B, recorded on November 1, 2026.'), { day: '2026-11-01', kind: 'sermon' });
+  assert.equal(recordedFromDescription('No date here'), null);
+});
+
+test('a YouTube upload stamp later than the service is corrected, at the CMS hour for its kind', () => {
+  assert.equal(correctedDate('2026-11-17T07:45:18.000Z', SERMON), '2026-10-25T16:00:00.000Z');
+  assert.equal(correctedDate('2026-11-17T07:46:31.000Z', EXHORT), '2026-10-25T15:00:00.000Z');
+});
+
+test('a blank date is filled from the description', () => {
+  assert.equal(correctedDate(null, EXHORT), '2026-10-25T15:00:00.000Z');
+});
+
+test('a date on or before the recording day is left alone (set by hand)', () => {
+  assert.equal(correctedDate('2026-10-25T16:00:00.000Z', SERMON), null);
+  assert.equal(correctedDate('2026-10-24T16:00:00.000Z', SERMON), null);
+  // the day after still counts as the same service (time zones)
+  assert.equal(correctedDate('2026-10-26T02:00:00.000Z', SERMON), null);
+});
+
+test('no recorded date means no change', () => {
+  assert.equal(correctedDate('2026-11-17T07:45:18.000Z', 'Sermon by A B on John 3.'), null);
+});
+
+test('a hand-set date (15:00/16:00Z) is never moved, even when the podcast disagrees', () => {
+  // CMS: Imitate God, Sep 28 2025 (hand-set). Podcast: recorded September 21, 2025.
+  assert.equal(correctedDate('2025-09-28T15:00:00.000Z', 'Exhortation by Dustin Williams, recorded on September 21, 2025.'), null);
+  assert.equal(correctedDate('2025-10-05T16:00:00.000Z', SERMON), null);
 });
