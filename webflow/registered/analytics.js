@@ -22,10 +22,13 @@
  *   connect_page_view     { entry_location }      landing on /connect: which CTA brought them ('none' = typed/external)
  *   connect_form_start    { form, entry_location } first interaction with the Connect form
  *   connect_form_field    { form, field }         a field left with something in it (field name only)
+ *   Drop-off = connect_form_start → connect_form_field (per field) →
+ *   connect_form_success, as a GA4 funnel exploration. (No "abandon" event:
+ *   the Google tag drops anything queued after the page is hidden, so it
+ *   never arrived from phones.)
  *   connect_form_submit   { form, fields_completed, interests_count }
  *   connect_form_success *{ form, entry_location }
  *   connect_form_error    { form }
- *   connect_form_abandon  { form, last_field, fields_completed }  left the page after starting, without submitting
  *   give_click *          { location, destination }
  *   contact_click         { method: email|phone, location }
  *   media_play            { mode: watch|listen }  first play on a sermon page
@@ -113,7 +116,7 @@
     var entry = recall();
     send('connect_page_view', { entry_location: entry });
 
-    var started = false, submitted = false, done = {}, last = '';
+    var started = false, done = {};
     function fieldName(el) {
       if (el.type === 'checkbox') return 'interests';
       var n = (el.getAttribute('data-name') || el.name || el.id || '').toLowerCase();
@@ -122,17 +125,16 @@
     form.addEventListener('focusin', function (e) {
       var el = e.target;
       if (!/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.type === 'submit' || el.type === 'hidden') return;
-      last = fieldName(el);
       if (!started) { started = true; send('connect_form_start', { form: FORM, entry_location: entry }); }
     });
     form.addEventListener('change', function (e) {
       var el = e.target, f = fieldName(el);
       var filled = el.type === 'checkbox' ? form.querySelectorAll('input[type=checkbox]:checked').length > 0 : String(el.value || '').trim() !== '';
-      last = f;
       if (filled && !done[f]) { done[f] = true; send('connect_form_field', { form: FORM, field: f }); }
     });
+    var failed = false;
     form.addEventListener('submit', function () {
-      submitted = true;
+      failed = false;
       send('connect_form_submit', {
         form: FORM,
         fields_completed: Object.keys(done).length,
@@ -148,17 +150,9 @@
         reported = true; send('connect_form_success', { form: FORM, entry_location: entry });
         try { sessionStorage.removeItem(ENTRY_KEY); } catch (e) {}
       }
-      if (failEl && getComputedStyle(failEl).display !== 'none') { submitted = false; send('connect_form_error', { form: FORM }); }
+      if (failEl && !failed && getComputedStyle(failEl).display !== 'none') { failed = true; send('connect_form_error', { form: FORM }); }
     }
     if (wrap && w.MutationObserver) new MutationObserver(check).observe(wrap, { attributes: true, subtree: true, attributeFilter: ['style', 'class'] });
-
-    function abandon() {
-      if (!started || submitted || reported) return;
-      started = false; // once per page
-      send('connect_form_abandon', { form: FORM, last_field: last || 'none', fields_completed: Object.keys(done).length });
-    }
-    w.addEventListener('pagehide', abandon);
-    d.addEventListener('visibilitychange', function () { if (d.visibilityState === 'hidden') abandon(); });
   }
 
   /* ---------- sermon player (window.ctkPlayer emits on document) ---------- */
