@@ -37,14 +37,6 @@
  *   YouTube and plays the MP3, and a video that leaves the screen is handed
  *   over or paused, never kept playing out of view.
  *
- * CLICK TO LOAD (1.6.0)  The YouTube iframe and its API (~1 MB of YouTube
- *   scripts) are not loaded with the page. .media-player_poster stands in the
- *   video box: the video's thumbnail and a play button. The first play, a
- *   transcript timestamp, or a switch to Watch builds the iframe, loads the API
- *   and then does what was asked (pendingStart). A browser that refuses to start
- *   the video without a tap inside the frame (iOS) shows YouTube's own play
- *   button instead; the status drops back to paused rather than spinning.
- *
  * STYLES  The look lives in Designer classes (style panel): media-player_bar
  *   (+ is-visible), _info, _title (a combo on text-style-title-small), _time,
  *   _controls, _btn (+ is-play), _progress,
@@ -115,7 +107,6 @@
   };
   var stage, root, videoBox, bar, iframe, audio = null;
   var yt = null, ytReady = false, ytHoldPause = false, ytDuration = 0;
-  var poster = null, pendingStart = null, pendingTimer = 0;
   var videoId = null, audioUrl = null, audioDuration = 0;
   var title = '', artist = '', artwork = null;
   var els = {};
@@ -176,12 +167,6 @@
       '.media-player{display:contents}',
       '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0;transition:none}',
       '.media-player_video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
-      '.media-player_poster{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;margin:0;background:#000;cursor:pointer;display:block}',
-      '.media-player_poster img{width:100%;height:100%;object-fit:cover;display:block}',
-      '.media-player_poster-play{position:absolute;left:50%;top:50%;width:4.5rem;height:4.5rem;margin:-2.25rem 0 0 -2.25rem;border-radius:50%;display:grid;place-content:center;background:var(--_theme---accent-01,#cdaa66);color:var(--_theme---background-01,#141414);box-shadow:0 .5rem 1.5rem rgba(0,0,0,.35);transition:transform .15s ease}',
-      '.media-player_poster-play svg{width:2.25rem;height:2.25rem;margin-left:.2rem}',
-      '@media (hover:hover){.media-player_poster:hover .media-player_poster-play{transform:scale(1.06)}}',
-      '.media-player_poster:focus-visible{outline:3px solid var(--_theme---accent-01,#cdaa66);outline-offset:-3px}',
       /* Away from the stage there is never a video on screen: the bar is all there is. A video
          cannot keep playing hidden (YouTube policy, and iOS pauses it anyway), so leaving the
          stage hands over to the audio, or pauses a sermon that has none. */
@@ -381,59 +366,6 @@
     videoBox.appendChild(iframe);
   }
 
-  /* ---------- click to load: the poster that stands in for the iframe ---------- */
-  function showPoster() {
-    if (!videoId || iframe || poster || !videoBox) return;
-    poster = d.createElement('button');
-    poster.type = 'button';
-    poster.className = 'media-player_poster';
-    poster.setAttribute('aria-label', 'Play video' + (title ? ': ' + title : ''));
-    var img = d.createElement('img');
-    img.alt = '';
-    img.decoding = 'async';
-    img.setAttribute('fetchpriority', 'high');
-    img.src = 'https://i.ytimg.com/vi_webp/' + encodeURIComponent(videoId) + '/maxresdefault.webp';
-    img.onerror = function () {
-      img.onerror = null;
-      img.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/hqdefault.jpg';
-    };
-    var play = d.createElement('span');
-    play.className = 'media-player_poster-play';
-    play.setAttribute('aria-hidden', 'true');
-    play.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>';
-    poster.appendChild(img);
-    poster.appendChild(play);
-    poster.addEventListener('click', function () {
-      if (S.mode !== 'watch') api.setMode('watch');
-      api.play();
-    });
-    videoBox.appendChild(poster);
-  }
-  function dropPoster() {
-    if (poster && poster.parentNode) poster.parentNode.removeChild(poster);
-    poster = null;
-  }
-  // What the click that built the player asked for, done once YouTube is ready.
-  function runPending() {
-    var p = pendingStart;
-    pendingStart = null;
-    if (!p || !yt) return;
-    var at = Math.max(0, Number(p.at) || 0);
-    if (!p.play) {
-      if (at) { ytHoldPause = true; yt.seekTo(at, true); }
-      return;
-    }
-    ytHoldPause = false;
-    if (at) yt.seekTo(at, true);
-    yt.playVideo();
-    clearTimeout(pendingTimer);
-    pendingTimer = setTimeout(function () {
-      // Not started (a browser that wants the tap inside the frame): stop
-      // spinning and let YouTube's own play button take it from here.
-      if (S.mode === 'watch' && S.status === 'loading' && !ytPlaying()) setStatus('paused');
-    }, 3000);
-  }
-
   /* ---------- paint: state → DOM ---------- */
   function paint() {
     if (!root) return;
@@ -539,12 +471,7 @@
   function ytState() { return yt && ytReady && yt.getPlayerState ? yt.getPlayerState() : -1; }
   function ytPlaying() { var s = ytState(); return s === YT_PLAYING || s === YT_BUFFERING; }
   function loadYT() {
-    if (!iframe) {
-      if (!videoId) return;
-      dropPoster();
-      buildIframe();
-      if (!iframe) return;
-    }
+    if (!iframe) return;
     if (w.YT && w.YT.Player) return attachYT();
     var prev = w.onYouTubeIframeAPIReady;
     w.onYouTubeIframeAPIReady = function () {
@@ -568,7 +495,6 @@
           api.ready = true;
           paint();
           emit('ready');
-          runPending();
         },
         onStateChange: function (e) {
           var s = e.data;
@@ -612,11 +538,13 @@
   }
 
   /* ---------- audio adapter ---------- */
+  var debugWatch = null; // set by ?ctk-debug
   function ensureAudio() {
     if (audio || !audioUrl) return audio;
     audio = new Audio();
     audio.preload = 'metadata';
     audio.setAttribute('playsinline', '');
+    if (debugWatch) debugWatch(audio);
     audio.src = audioUrl;
     audio.playbackRate = S.rate;
     audio.addEventListener('playing', function () {
@@ -638,12 +566,13 @@
     audio.addEventListener('pause', function () {
       if (S.unlocking) { S.unlocking = false; S.unlocked = true; audio.muted = false; logHandoff('unlocked'); return; }
       if (S.mode !== 'listen' || S.pending) return;
-      setStatus(audio.ended ? 'ended' : 'paused');
+      var done = audioAtEnd();
+      setStatus(done ? 'ended' : 'paused');
       savePosition(true);
-      emit(audio.ended ? 'ended' : 'pause');
+      emit(done ? 'ended' : 'pause');
     });
     audio.addEventListener('waiting', function () { if (S.mode === 'listen' && S.userStarted) setStatus('loading'); });
-    audio.addEventListener('loadedmetadata', function () { audioDuration = audio.duration || audioDuration; paint(); });
+    audio.addEventListener('loadedmetadata', function () { if (saneDuration(audio.duration)) audioDuration = audio.duration; paint(); });
     audio.addEventListener('ratechange', function () {
       if (S.mode === 'listen' && RATES.indexOf(audio.playbackRate) !== -1 && audio.playbackRate !== S.rate) {
         S.rate = audio.playbackRate; savePrefs(); paint();
@@ -653,6 +582,9 @@
       audioFailed('Audio unavailable');
     });
     audio.addEventListener('timeupdate', positionState);
+    // Repaint from the element itself: the tick only runs once playback has been seen to start.
+    audio.addEventListener('timeupdate', function () { if (S.mode === 'listen') paint(); });
+    audio.addEventListener('durationchange', function () { if (saneDuration(audio.duration)) audioDuration = audio.duration; paint(); });
     return audio;
   }
   function audioFailed(msg) {
@@ -685,6 +617,15 @@
       say(msg, true);
     }
     emit('error', { source: 'audio' });
+  }
+  // iOS can report a duration of under a second (or Infinity) while an MP3 is still
+  // being probed; such a value made the bar read 0:00 / 0:00 with a full track, and a
+  // pause then counted as "ended" and hid the bar. Trust only a believable duration.
+  function saneDuration(x) { return x > 1 && isFinite(x); }
+  function audioAtEnd() {
+    if (!audio || !audio.ended) return false;
+    var dur = api.getDuration();
+    return dur > 60 && api.getTime() >= dur - 2;
   }
   function audioTime() {
     return audio ? Math.max(0, audio.currentTime - S.offset) : S.lastTime;
@@ -917,7 +858,10 @@
     isPlaying: function () { return S.status === 'playing' || S.status === 'loading'; },
     getTime: function () { return S.mode === 'listen' ? audioTime() : ytTime(); },
     getDuration: function () {
-      if (S.mode === 'listen' && audio && audio.duration > 0 && isFinite(audio.duration)) return audio.duration - S.offset;
+      if (S.mode === 'listen') {
+        var a = audio && saneDuration(audio.duration) ? audio.duration : audioDuration;
+        if (a > 1) return Math.max(0, a - S.offset);
+      }
       return ytDuration || audioDuration || 0;
     },
     getRate: function () { return S.rate; },
@@ -941,9 +885,8 @@
         ytHoldPause = false;
         if (!S.userStarted) { var t1 = maybeResume(); if (t1) yt.seekTo(t1, true); }
         yt.playVideo();
-      } else if (videoId) {
+      } else if (iframe) {
         setStatus('loading');
-        pendingStart = { play: true, at: S.lastTime || 0 };
         loadYT();
       }
     },
@@ -969,11 +912,6 @@
         if (opts.play) { ytHoldPause = false; yt.playVideo(); }
       } else {
         S.lastTime = s;
-        if (videoId && S.mode === 'watch' && (opts.play || iframe)) {
-          pendingStart = { play: !!opts.play, at: s };
-          if (opts.play) setStatus('loading');
-          loadYT();
-        }
       }
       if (opts.play) started();
       paint();
@@ -1053,7 +991,6 @@
         } else {
           S.lastTime = t;
           setStatus(wasPlaying ? 'loading' : 'paused');
-          pendingStart = { play: wasPlaying, at: t };
           loadYT();
         }
         say('Switched to video');
@@ -1126,7 +1063,6 @@
     if (audio) { audio.pause(); audio = null; }
     if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
     iframe = null; yt = null; ytReady = false; ytHoldPause = false; ytDuration = 0;
-    dropPoster(); pendingStart = null; clearTimeout(pendingTimer);
     videoId = src.videoId; audioUrl = src.audioUrl; S.offset = src.offset; audioDuration = src.audioDuration;
     api.hasVideo = !!videoId; api.hasAudio = !!audioUrl; api.ready = false;
     S.slug = location.pathname.replace(/\/+$/, '').split('/').pop() || 'home';
@@ -1146,9 +1082,8 @@
     root.setAttribute('data-has-audio', String(!!audioUrl));
     readPage();
     say('');
-    // Click to load: the poster, not the iframe. loadYT() builds the iframe
-    // on the first play / seek / switch to Watch.
-    showPoster();
+    buildIframe();
+    if (iframe) loadYT();
     if (S.mode === 'listen') { ensureAudio(); api.ready = true; }
     if (S.presentation === 'hidden') S.presentation = 'inline';
     attachStage(el);
@@ -1375,6 +1310,34 @@
     for (var i = 0; i < m.length; i++) m[i].parentNode.removeChild(m[i]);
   }
 
+  /* ---------- ?ctk-debug: an on-page readout of the audio element, for phones without a console ---------- */
+  function debugPanel() {
+    if (!/[?&]ctk-debug\b/.test(location.search)) return;
+    var box = el('pre', null, { 'aria-hidden': 'true' });
+    box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;max-width:calc(100vw - 16px);margin:0;padding:8px;font:11px/1.35 ui-monospace,monospace;white-space:pre-wrap;background:rgba(0,0,0,.85);color:#9f9;border-radius:6px;pointer-events:none';
+    d.body.appendChild(box);
+    var log = [];
+    // new Audio() is never in the document, so its events are watched on the element itself.
+    debugWatch = function (a) {
+      ['loadstart', 'loadedmetadata', 'durationchange', 'canplay', 'playing', 'waiting', 'stalled', 'pause', 'ended', 'error', 'emptied', 'seeking', 'seeked'].forEach(function (ev) {
+        a.addEventListener(ev, function () {
+          log.push(ev + ' d=' + Number(a.duration).toFixed(2) + ' t=' + a.currentTime.toFixed(1));
+          log = log.slice(-12);
+        });
+      });
+    };
+    if (audio) debugWatch(audio);
+    setInterval(function () {
+      var a = audio;
+      box.textContent = 'mode ' + S.mode + ' · status ' + S.status + ' · ' + S.presentation + ' · started ' + S.userStarted + ' · dismissed ' + S.dismissed +
+        '\nunlocking ' + S.unlocking + ' · unlocked ' + S.unlocked + ' · pending ' + S.pending +
+        '\naudio ' + (a ? 'rs ' + a.readyState + ' ns ' + a.networkState + ' paused ' + a.paused + ' ended ' + a.ended + ' muted ' + a.muted +
+          '\n  dur ' + a.duration + ' t ' + a.currentTime.toFixed(2) + (a.error ? ' err ' + a.error.code : '') : 'none') +
+        '\napi t ' + api.getTime().toFixed(1) + ' / ' + api.getDuration().toFixed(1) + ' · yt ' + ytDuration +
+        '\n' + log.join('\n');
+    }, 300);
+  }
+
   function init() {
     if (booted) return true;
     dropMockups();
@@ -1387,6 +1350,7 @@
     watchVisibility();
     nav.start();
     w.addEventListener('pagehide', function () { savePosition(true); });
+    debugPanel();
     mount(el);
     return true;
   }
