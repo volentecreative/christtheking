@@ -10,3 +10,7 @@
 - Staging-only work goes on the `I'm New (staging)` page (`/about/im-new-staging`,
   noindex); publish it to the webflow.io subdomain only. Live publishes go to the
   custom domains only, with that page set to draft for the publish and undrafted after.
+- Webflow's MCP tools can't insert into a component slot whose only children are
+  component instances (no non-instance anchor). On I'm New (live + staging) the
+  mission section's `container` was unlinked for this reason; it is labelled
+  "container (Large, unlinked)" in the Navigator and renders identically.
