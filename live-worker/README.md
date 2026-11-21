@@ -9,7 +9,7 @@ Live at **https://livestream.christtheking.build**
 
 | Path | Returns |
 |---|---|
-| `/` | 302 to the live stream → a stream scheduled within 3h → the channel's Videos tab |
+| `/` | 302 to the live stream, else the channel's Videos tab |
 | `/status` | JSON `{ state, videoId, url }` (CORS-open, for the site's /livestream page) |
 | `/embed` | Bare player page for an iframe |
 | `/refresh?key=SETUP_KEY` | Forget the cached link and look again (use after a mid-service stream restart) |
@@ -17,10 +17,11 @@ Live at **https://livestream.christtheking.build**
 
 ## Caching
 
-A live stream's link is kept for **15 minutes** (KV, global), so a whole service is
-only a handful of YouTube lookups. "Nothing live" is kept for **60 seconds**, so the
-start of the service is picked up within a minute. If the ATEM stream restarts
-mid-service (new video ID), open `/refresh?key=…` to switch everyone over at once.
+Lookups are on demand. When nothing is live, every request asks YouTube (1 quota
+unit of 10,000/day). Once a live stream is found, its link is kept for **15 minutes**
+(KV, global), so during a service visitors share one lookup. If the ATEM stream
+restarts mid-service (new video ID), open `/refresh?key=…` to switch everyone over
+at once.
 
 ## Where things live
 

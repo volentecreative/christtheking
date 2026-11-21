@@ -5,9 +5,10 @@
  * can't see it. This Worker asks the YouTube Data API — signed in as the channel —
  * for the broadcast that's live right now, and sends visitors there.
  *
- *   GET /           → 302 to the live stream, else a stream starting soon, else FALLBACK_URL
+ *   GET /           → 302 to the live stream, else FALLBACK_URL
  *   GET /embed      → a bare page with the current stream in an <iframe> (for a Webflow embed)
- *   GET /status     → JSON: what / and /embed would show (debugging)
+ *   GET /status     → JSON: what / and /embed would show (used by the site's /livestream page)
+ *   GET /refresh?key=SETUP_KEY   → forget the cached live link (after a stream restart)
  *   GET /auth/start?key=SETUP_KEY → one-time Google sign-in as the channel
  *   GET /auth/callback            → stores the refresh token in KV
  *
@@ -17,8 +18,6 @@
  */
 
 const SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
-const RESULT_TTL = 60; // seconds to cache the "what's live" answer
-const UPCOMING_WINDOW_MS = 3 * 60 * 60 * 1000; // treat a scheduled stream as "now" within 3h
 
 export default {
   async fetch(request, env, ctx) {
@@ -26,11 +25,11 @@ export default {
     try {
       switch (url.pathname.replace(/\/+$/, '') || '/') {
         case '/':
-          return redirectTo(await currentTarget(env, ctx));
+          return redirectTo(await currentTarget(env));
         case '/embed':
-          return embedPage(await currentTarget(env, ctx), env);
+          return embedPage(await currentTarget(env), env);
         case '/status':
-          return json(await currentTarget(env, ctx));
+          return json(await currentTarget(env));
         case '/refresh':
           return refresh(url, env);
         case '/auth/start':
@@ -52,34 +51,20 @@ export default {
 // ---------------------------------------------------------------------------
 // What's live?
 
-// A live stream's link is held in KV (global) for LIVE_TTL so the whole service
-// is one lookup; /refresh clears it if the stream restarts with a new video ID.
-// "Nothing live" is held only RESULT_TTL in the local cache so 10:00 is noticed fast.
+// On demand: each request looks up what's live, except that once a live stream is
+// found its link is held in KV (global) for LIVE_TTL, so during a service visitors
+// share one lookup instead of each asking YouTube. /refresh clears it if the stream
+// restarts with a new video ID. "Nothing live" is not cached.
 const LIVE_TTL = 15 * 60;
-const OFFLINE_CACHE_KEY = 'https://cache.internal/ctk-live-target';
 
-async function currentTarget(env, ctx) {
+async function currentTarget(env) {
   const live = await env.STATE.get('live_target', 'json');
   if (live) return live;
-
-  const cache = caches.default;
-  const cacheKey = new Request(OFFLINE_CACHE_KEY);
-  const hit = await cache.match(cacheKey);
-  if (hit) return hit.json();
 
   const target = await lookupTarget(env);
   if (target.state === 'live') {
     await env.STATE.put('live_target', JSON.stringify(target), { expirationTtl: LIVE_TTL });
-    return target;
   }
-  ctx.waitUntil(
-    cache.put(
-      cacheKey,
-      new Response(JSON.stringify(target), {
-        headers: { 'Cache-Control': `max-age=${RESULT_TTL}`, 'Content-Type': 'application/json' },
-      })
-    )
-  );
   return target;
 }
 
@@ -91,17 +76,6 @@ async function lookupTarget(env) {
   const active = await listBroadcasts(token, 'active');
   const live = active.find((b) => b.status?.lifeCycleStatus === 'live') || active[0];
   if (live) return target('live', live);
-
-  const upcoming = await listBroadcasts(token, 'upcoming');
-  const now = Date.now();
-  const soon = upcoming
-    .filter((b) => b.snippet?.isDefaultBroadcast !== true) // idle stream-key placeholder isn't a real event
-    .filter((b) => {
-      const t = Date.parse(b.snippet?.scheduledStartTime || '');
-      return t && t - now < UPCOMING_WINDOW_MS && now - t < UPCOMING_WINDOW_MS;
-    })
-    .sort((a, b) => Date.parse(a.snippet.scheduledStartTime) - Date.parse(b.snippet.scheduledStartTime))[0];
-  if (soon) return target('upcoming', soon);
 
   return { state: 'offline', url: env.FALLBACK_URL };
 }
@@ -132,7 +106,6 @@ async function refresh(url, env) {
     return new Response('Forbidden', { status: 403 });
   }
   await env.STATE.delete('live_target');
-  await caches.default.delete(new Request(OFFLINE_CACHE_KEY));
   const t = await lookupTarget(env);
   if (t.state === 'live') await env.STATE.put('live_target', JSON.stringify(t), { expirationTtl: LIVE_TTL });
   const msg = t.videoId
@@ -250,7 +223,7 @@ function embedPage(t, env) {
 <style>html,body{margin:0;height:100%;background:#000}iframe{border:0;width:100%;height:100%}
 .off{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font:1rem/1.4 system-ui,sans-serif}
 .off a{color:#fff}</style>${body}`,
-    { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': `max-age=${RESULT_TTL}` } }
+    { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': `no-store` } }
   );
 }
 
