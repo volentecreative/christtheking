@@ -12,7 +12,15 @@ Live at **https://livestream.christtheking.build**
 | `/` | 302 to the live stream → a stream scheduled within 3h → the channel's Videos tab |
 | `/status` | JSON `{ state, videoId, url }` (CORS-open, for the site's /livestream page) |
 | `/embed` | Bare player page for an iframe |
+| `/refresh?key=SETUP_KEY` | Forget the cached link and look again (use after a mid-service stream restart) |
 | `/auth/start?key=SETUP_KEY` | One-time Google sign-in as the channel |
+
+## Caching
+
+A live stream's link is kept for **15 minutes** (KV, global), so a whole service is
+only a handful of YouTube lookups. "Nothing live" is kept for **60 seconds**, so the
+start of the service is picked up within a minute. If the ATEM stream restarts
+mid-service (new video ID), open `/refresh?key=…` to switch everyone over at once.
 
 ## Where things live
 

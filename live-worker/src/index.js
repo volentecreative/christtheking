@@ -31,6 +31,8 @@ export default {
           return embedPage(await currentTarget(env, ctx), env);
         case '/status':
           return json(await currentTarget(env, ctx));
+        case '/refresh':
+          return refresh(url, env);
         case '/auth/start':
           return authStart(url, env);
         case '/auth/callback':
@@ -50,13 +52,26 @@ export default {
 // ---------------------------------------------------------------------------
 // What's live?
 
+// A live stream's link is held in KV (global) for LIVE_TTL so the whole service
+// is one lookup; /refresh clears it if the stream restarts with a new video ID.
+// "Nothing live" is held only RESULT_TTL in the local cache so 10:00 is noticed fast.
+const LIVE_TTL = 15 * 60;
+const OFFLINE_CACHE_KEY = 'https://cache.internal/ctk-live-target';
+
 async function currentTarget(env, ctx) {
+  const live = await env.STATE.get('live_target', 'json');
+  if (live) return live;
+
   const cache = caches.default;
-  const cacheKey = new Request('https://cache.internal/ctk-live-target');
+  const cacheKey = new Request(OFFLINE_CACHE_KEY);
   const hit = await cache.match(cacheKey);
   if (hit) return hit.json();
 
   const target = await lookupTarget(env);
+  if (target.state === 'live') {
+    await env.STATE.put('live_target', JSON.stringify(target), { expirationTtl: LIVE_TTL });
+    return target;
+  }
   ctx.waitUntil(
     cache.put(
       cacheKey,
@@ -109,6 +124,21 @@ async function listBroadcasts(token, broadcastStatus) {
   const res = await fetch(api, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`liveBroadcasts ${broadcastStatus}: ${res.status} ${await res.text()}`);
   return (await res.json()).items || [];
+}
+
+// After a mid-service stream restart: forget the cached link and look again.
+async function refresh(url, env) {
+  if (!env.SETUP_KEY || url.searchParams.get('key') !== env.SETUP_KEY) {
+    return new Response('Forbidden', { status: 403 });
+  }
+  await env.STATE.delete('live_target');
+  await caches.default.delete(new Request(OFFLINE_CACHE_KEY));
+  const t = await lookupTarget(env);
+  if (t.state === 'live') await env.STATE.put('live_target', JSON.stringify(t), { expirationTtl: LIVE_TTL });
+  const msg = t.videoId
+    ? `<p>Now pointing to <b>${escapeHtml(t.title)}</b> (${t.state}).</p><p><a href="${t.url}">${t.url}</a></p>`
+    : `<p>Nothing is live yet. Give YouTube a minute after the stream starts, then refresh this page.</p>`;
+  return page('Livestream link refreshed', msg);
 }
 
 // ---------------------------------------------------------------------------
