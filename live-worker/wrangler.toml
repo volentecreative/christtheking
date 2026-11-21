@@ -1,0 +1,16 @@
+name = "ctk-live"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+account_id = "e0a87a36e31909b69364800e726b4a84"  # Christ the King Church
+workers_dev = false
+routes = [{ pattern = "livestream.christtheking.build", custom_domain = true }]
+
+[vars]
+CHANNEL_ID = "UCvqIrm5nOrXZLzD72MXH9Sw"
+FALLBACK_URL = "https://www.youtube.com/@ChristIsKingOfStillwater/videos"
+
+[[kv_namespaces]]
+binding = "STATE"
+id = "5d8bf001d79341d98b62c97da2c238a1"
+
+# Secrets (wrangler secret put …): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SETUP_KEY

@@ -15,3 +15,7 @@ podcast-report.csv
 credentials.json.bak
 credentials.json.*.bak
 _to_delete/
+
+# Cloudflare Worker local state
+.wrangler/
+.dev.vars
