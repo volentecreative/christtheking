@@ -17,11 +17,21 @@ Live at **https://livestream.christtheking.build**
 
 ## Caching
 
-Lookups are on demand. When nothing is live, every request asks YouTube (1 quota
-unit of 10,000/day). Once a live stream is found, its link is kept for **15 minutes**
+Lookups are on demand. "Nothing live" is cached 30 seconds per Cloudflare location.
+Once a live stream is found, its link is kept for **5 minutes**
 (KV, global), so during a service visitors share one lookup. If the ATEM stream
 restarts mid-service (new video ID), open `/refresh?key=…` to switch everyone over
 at once.
+
+## What counts as live
+
+A broadcast must be `live` in YouTube **and** its bound ingest stream must be
+receiving video (`liveStreams` `streamStatus: active`, not `noData`). With
+auto-stop off, YouTube leaves a broadcast `live` after the ATEM stops sending
+until someone clicks End stream in Studio; the second check stops the site from
+showing a dead player in that case (2026-11-22). Worst case after the ATEM stops:
+5 minutes (the cached live link), plus up to a minute for an open page to re-check
+(resolver 2.5.0+).
 
 ## Where things live
 

@@ -93,10 +93,34 @@ async function lookupTarget(env) {
 
   // broadcastType=all includes the ATEM's default ("persistent") stream-key broadcast.
   const active = await listBroadcasts(token, 'active');
-  const live = active.find((b) => b.status?.lifeCycleStatus === 'live') || active[0];
-  if (live) return target('live', live);
+  // Only a broadcast YouTube calls "live" — not one still in testing/starting.
+  const live = active.filter((b) => b.status?.lifeCycleStatus === 'live');
+
+  // A broadcast with auto-stop off stays "live" after the ATEM stops sending, until
+  // someone clicks End stream in YouTube Studio. So also require its ingest stream to
+  // be receiving video right now.
+  const receiving = await receivingStreamIds(token, live);
+  const onAir = live.find((b) => receiving.has(b.contentDetails?.boundStreamId));
+  if (onAir) return target('live', onAir);
 
   return { state: 'offline', url: env.FALLBACK_URL };
+}
+
+// Stream IDs (of those bound to the given broadcasts) that YouTube sees data on.
+async function receivingStreamIds(token, broadcasts) {
+  const ids = [...new Set(broadcasts.map((b) => b.contentDetails?.boundStreamId).filter(Boolean))];
+  if (!ids.length) return new Set();
+  const api = new URL('https://www.googleapis.com/youtube/v3/liveStreams');
+  api.searchParams.set('part', 'id,status');
+  api.searchParams.set('id', ids.join(','));
+  const res = await fetch(api, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`liveStreams: ${res.status} ${await res.text()}`);
+  const items = (await res.json()).items || [];
+  return new Set(
+    items
+      .filter((s) => s.status?.streamStatus === 'active' && s.status?.healthStatus?.status !== 'noData')
+      .map((s) => s.id)
+  );
 }
 
 function target(state, b) {
@@ -110,7 +134,7 @@ function target(state, b) {
 
 async function listBroadcasts(token, broadcastStatus) {
   const api = new URL('https://www.googleapis.com/youtube/v3/liveBroadcasts');
-  api.searchParams.set('part', 'id,snippet,status');
+  api.searchParams.set('part', 'id,snippet,status,contentDetails');
   api.searchParams.set('broadcastStatus', broadcastStatus);
   api.searchParams.set('broadcastType', 'all');
   api.searchParams.set('maxResults', '10');
