@@ -329,12 +329,12 @@
     times.appendChild(c.elapsed); times.appendChild(c.left);
     var buttons = el('div', 'media-controls_buttons ' + (inStage ? 'is-overlay' : 'is-compact')); // compact: smaller with a mouse
     function skip(sec) {
-      var b = el('button', 'media-player_btn is-skip' + (inStage ? '' : ' is-compact'), { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds' });
+      var b = el('button', 'media-player_btn is-skip' + (inStage ? '' : ' is-compact'), { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds', 'vci-tooltip': '' });
       b.innerHTML = svg(ICON.replay, sec > 0 ? 'is-forward' : '') + '<span class="media-controls_skip-label" aria-hidden="true">' + Math.abs(sec) + '</span>';
       b.addEventListener('click', function () { api.seek(api.getTime() + sec); });
       return b;
     }
-    c.play = el('button', 'media-player_btn is-play ' + (inStage ? 'is-large' : 'is-compact'), { type: 'button' });
+    c.play = el('button', 'media-player_btn is-play ' + (inStage ? 'is-large' : 'is-compact'), { type: 'button', 'vci-tooltip': '' });
     c.play.innerHTML = svg(ICON.play);
     c.playPath = c.play.querySelector('path');
     c.play.addEventListener('click', function () { api.toggle(); });
@@ -361,16 +361,16 @@
     els.info.appendChild(els.title); els.info.appendChild(els.time);
 
     var controls = el('div', 'media-player_controls');
-    els.play = el('button', 'media-player_btn is-play', { type: 'button', 'data-player': 'play' });
+    els.play = el('button', 'media-player_btn is-play', { type: 'button', 'data-player': 'play', 'vci-tooltip': '' });
     els.play.innerHTML = svg(ICON.play);
     els.playPath = els.play.querySelector('path');
     // Continue listening: the site's primary button, shown only after a blocked hand-off.
     els.cont = el('a', 'button', { href: '#', role: 'button', 'data-player': 'continue', 'data-player-nav': 'off' });
     els.cont.innerHTML = '<div class="button-type">' + svg(ICON.listen, 'button-icon') + '<p class="text-button">Continue listening</p><div class="button-sheen"></div></div>';
     // The chevron opens the player; only a blocked hand-off shows the close button.
-    els.expand = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Open player', 'data-player': 'expand', 'data-player-nav': 'off' });
+    els.expand = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Open player', 'data-player': 'expand', 'data-player-nav': 'off', 'vci-tooltip': '' });
     els.expand.innerHTML = svg(ICON.up);
-    els.close = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Close player', 'data-player': 'close', 'data-player-nav': 'off' });
+    els.close = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Close player', 'data-player': 'close', 'data-player-nav': 'off', 'vci-tooltip': '' });
     els.close.innerHTML = svg(ICON.close);
     [els.play, els.cont, els.expand, els.close].forEach(function (n) { controls.appendChild(n); });
     bar.appendChild(els.info); bar.appendChild(controls);
@@ -406,7 +406,7 @@
     // Header as on the site's other drawers (filters, transcript): grab, title, close.
     var header = el('div', 'modal_header is-centered');
     header.innerHTML = '<div class="modal_title">' + svg(ICON.listen, 'button-icon') + '<h2 class="heading-style-h5">Now playing</h2></div>';
-    dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Close player' });
+    dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Close player', 'vci-tooltip': '' });
     dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" class="button-icon"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
     header.appendChild(dr.close);
     var head = dr.head = el('a', 'media-drawer_head', { href: '#', 'data-player-nav': 'off' }), text = el('div', 'media-drawer_text');
@@ -490,11 +490,12 @@
     d.documentElement.classList.remove('has-player-drawer');
     if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
   }
-  // Docked once the audio has played and the stage is off screen (or on another page);
-  // also docked with Continue listening after a blocked hand-off while the stage is away.
+  // Docked once the audio has played: on desktop at once, as the sign that audio is playing;
+  // on phones only while the stage is off screen (or on another page). Also docked with
+  // Continue listening after a blocked hand-off while the stage is away.
   function place() {
     if (!bar) return;
-    var away = !stage || !S.onStage;
+    var away = !stage || !S.onStage || (!mobile.matches && S.mode === 'listen');
     var docked = away && (S.mode === 'listen' ? S.started && !S.dismissed : S.handoff === 'blocked');
     bar.classList.toggle('is-visible', docked);
     bar.setAttribute('data-state', S.mode === 'watch' && S.handoff === 'blocked' ? 'blocked' : '');
@@ -939,6 +940,7 @@
     nav.start();
     ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { d.addEventListener(ev, unlock, { capture: true, passive: true }); });
     w.addEventListener('pagehide', savePos);
+    if (mobile.addEventListener) mobile.addEventListener('change', place); else if (mobile.addListener) mobile.addListener(place);
     mount(el);
     return true;
   }
