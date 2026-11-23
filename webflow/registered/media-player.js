@@ -340,7 +340,9 @@
     c.playPath = c.play.querySelector('path');
     c.play.addEventListener('click', function () { api.toggle(); });
     buttons.appendChild(skip(-15)); buttons.appendChild(c.play); buttons.appendChild(skip(15));
-    (inStage ? [buttons, c.scrub, times] : [c.scrub, times, buttons]).forEach(function (n) { parent.appendChild(n); });
+    var timeline = el('div', 'media-controls_timeline'); // scrubber + times: one piece in both places
+    timeline.appendChild(c.scrub); timeline.appendChild(times);
+    (inStage ? [buttons, timeline] : [timeline, buttons]).forEach(function (n) { parent.appendChild(n); });
     scrubbing(c.scrub, track);
     sets.push(c);
     return c;
