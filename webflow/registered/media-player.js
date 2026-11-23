@@ -1,355 +1,612 @@
-/* Christ the King — sermon media player.
- * Site settings → Custom code → Registered scripts, as `mediaPlayer`, applied
- * site-wide in the footer. Source of truth: webflow/registered/media-player.js.
+/* Christ the King — sermon player (registered script `mediaPlayer`, site-wide footer).
  *
- * One player for Watch (YouTube IFrame API) and Listen (the Libsyn MP3 in an
- * HTML <audio>), inline on the sermon page and floating once the video scrolls
- * away. One component, one state, the same controls on desktop and phone; only
- * the dock's size and placement change with the viewport.
- *
- * HOOKS (Media Template)
- *   .video-embed[data-video]                 the stage: a block that keeps the layout
- *     data-youtube-id="<id>"                 bound to Media → YouTube Video ID (exists today)
- *     data-audio-url="<mp3 url>"             bound to Media → Audio URL  ← add in the Designer
- *     data-audio-offset="<seconds>"          optional, Media → Audio Offset Seconds
- *     data-audio-duration="<seconds>"        optional, Media → Audio Duration Seconds
- *   h1                                        the title, for the dock and the lock screen
- *   .media-byline .contributor_content > :first-child   the speaker(s), for the lock screen
- *
- *   Debug only: ?ctk-audio=<url> overrides data-audio-url (never in production links).
- *
- * WHAT IT BUILDS (on <body>)
- *   .media-player [data-player="root"] [data-mode] [data-presentation] [data-status] [data-bar]
- *     .media-player_video   the 16:9 box that owns the YouTube iframe for the page's life,
- *                           laid over the stage while it is in view and hidden otherwise.
- *                           A video never plays off-screen: scrolling away or leaving the
- *                           page hands over to the audio, or pauses a sermon without any
- *     .media-player_bar     a floating card (bottom-right on desktop, across the bottom on
- *                           phones) from the first play until closed: title · elapsed ·
- *                           progress · duration · play/pause · close. No Listen/Watch on it:
- *                           the page's Listen button and setMode() switch sources.
- *   .media-player_listen    a "Listen" icon button added to the page's "Listen on" row
- *   The iframe is never moved in the DOM (moving an iframe reloads it).
- *
- * YOUTUBE POLICY (developers.google.com/youtube/terms/required-minimum-functionality)
- *   The player viewport stays ≥ 200×200px, nothing is drawn over it, and
- *   YouTube is never played hidden or in the background: Listen mode pauses
- *   YouTube and plays the MP3, and a video that leaves the screen is handed
- *   over or paused, never kept playing out of view.
- *
- * CLICK TO LOAD (1.6.0)  The YouTube iframe and its API (~1 MB of YouTube
- *   scripts) are not loaded with the page. .media-player_poster stands in the
- *   video box: the video's thumbnail and a play button. The first play, a
- *   transcript timestamp, or a switch to Watch builds the iframe, loads the API
- *   and then does what was asked (pendingStart). A browser that refuses to start
- *   the video without a tap inside the frame (iOS) shows YouTube's own play
- *   button instead; the status drops back to paused rather than spinning.
- *
- * STYLES  The look lives in Designer classes (style panel): media-player_bar
- *   (+ is-visible), _info, _title (a combo on text-style-title-small), _time,
- *   _controls, _btn (+ is-play), _progress,
- *   _progress-fill, _video, _listen (+ is-fallback). The script only injects
- *   behaviour CSS (attribute states, :has(), the progress variable, the dock
- *   bumps). webflow/styles/media-player.css is a reference copy. A static
- *   mockup of the bar sits on the Media Template ([data-player-mockup]) for
- *   styling on the canvas; the script removes it from the live page.
- *
- * API     window.ctkPlayer — ready, hasVideo, hasAudio, getMode(), getTime(),
- *         getDuration(), isPlaying(), play(), pause(), toggle(), seek(s, {play}),
- *         skip(±s), setMode('watch'|'listen'), setRate(r), getRate(), expand(),
- *         close(), setAudio(url), on(event, fn)
- *         Times are on the VIDEO timeline (audio = video + offset), so the
- *         transcript's #t= anchors work in both modes.
- * EVENTS  on document: ctk:player:ready · play · pause · ended · time (≈400ms while
- *         active) · mode · float · inline · hidden · error · navigate — detail { player, mode, time }
- *
- * NAVIGATION  While the player is active (started and not closed), same-site links
- *         swap the next page's content in place instead of unloading the document,
- *         so playback carries on: see the navigation section. data-player-nav="off"
- *         on a link or an ancestor opts it out. Closing the player restores normal
- *         navigation. The root is a child of <body>, outside the swapped content.
- * STORAGE localStorage ctk-player:prefs { mode, rate, handoff } · ctk-player:positions { slug: { t, mode, at } }
- *         · ctk-player:handoff-log (the last 40 hand-off attempts, for testing on phones)
- * HAND-OFF  Leaving the browser (tab switch, app switch, lock) while a video plays hands
- *         over to the audio when the sermon has any: see the hand-off section. Default
- *         on; ctkPlayer.setHandoff(false) turns it off (remembered).
+ * Stage   .video-embed[data-video] on the Media Template: data-youtube-id, data-audio-url,
+ *         optional data-audio-offset (seconds the MP3 runs ahead of the video).
+ * Switch  [data-player-modes] > [data-player-mode="watch|listen"] below the stage (Designer).
+ *         Shown only when both sources exist; the chosen one gets .is-active.
+ * Watch   the YouTube embed, created in the stage on first use.
+ * Listen  the stage keeps its 16:9 size: the video fades to its thumbnail under the controls
+ *         (.media-player_overlay: −15 / play / +15 and a scrubber). Once the audio has played
+ *         and the stage is off screen, the bar (media-player_bar) docks to the bottom
+ *         (.is-visible). Same-site links then load in place so the audio carries on; when it
+ *         ends, the next part in the series ([data-series-next]) loads and plays.
+ * Drawer  in listen mode, a click on the docked bar opens the player (.media-drawer) with the same controls: a sheet on phones, a card over the bar on desktop.
+ * Mode    cookie ctk-playback-mode (watch|listen), written only by a tap on the switch.
+ * Mobile  ≤991px (the site's tablet breakpoint, as the transcript sheet): a playing video that
+ *         scrolls fully off screen hands over to the audio once. If the browser blocks audio
+ *         without a tap, the video keeps playing and the docked bar offers Continue listening.
+ * API     window.ctkPlayer: hasVideo, hasAudio, getMode, getTime, getDuration, isPlaying, play,
+ *         pause, toggle, seek(s, {play}), setMode(mode). Times are on the video's clock.
+ * Events  ctk:player:play · pause · ended · mode · navigate, on document.
  */
 (function () {
   'use strict';
   var w = window, d = document;
   if (w.ctkPlayer) return;
 
-  var SKIP = 15;
-  var RATES = [1, 1.25, 1.5, 1.75, 2, 0.75];
-  var PREF_KEY = 'ctk-player:prefs';
+  var COOKIE = 'ctk-playback-mode';
   var POS_KEY = 'ctk-player:positions';
-  var FLOAT_OUT = 0.25, FLOAT_IN = 0.6;   // stage visibility that floats / restores
-  var MIN_RESUME = 15, END_SLACK = 30;     // resume only between these from either end
-  var SWITCH_TIMEOUT = 8000;
-  var YT_PLAYING = 1, YT_PAUSED = 2, YT_BUFFERING = 3, YT_ENDED = 0, YT_CUED = 5;
-
-  var reduced = w.matchMedia('(prefers-reduced-motion: reduce)');
-
-  /* ---------- state ---------- */
-  var S = {
-    slug: location.pathname.replace(/\/+$/, '').split('/').pop() || 'home',
-    mode: 'watch',
-    status: 'idle',          // idle | loading | playing | paused | ended | error
-    presentation: 'inline',  // inline | floating | hidden
-    userStarted: false,
-    dismissed: false,
-    rate: 1,
-    offset: 0,
-    pending: null,           // mode being switched to, while the handoff completes
-    lastTime: 0,
-    ratio: 1,                // how much of the stage is on screen
-    sheet: false,            // the transcript sheet is open over the page
-    anchor: 0,               // the stage's top in document coordinates, last placed
-    href: '',                // the sermon page this item came from
-    autoPaused: false,       // the video was paused because it left the screen (no audio to hand to)
-    unlocked: false,         // the <audio> has been played once inside a user gesture (iOS needs this)
-    unlocking: false,        // that muted unlock play is in flight
-    handoff: true,           // switch a playing video to audio when the page is hidden
-    autoLeave: false,        // an automatic hand-over to audio is in flight
-    playOnInline: false      // play the video once it is back on screen
-  };
-  var stage, root, videoBox, bar, iframe, audio = null;
-  var yt = null, ytReady = false, ytHoldPause = false, ytDuration = 0;
-  var poster = null, pendingStart = null, pendingTimer = 0;
-  var videoId = null, audioUrl = null, audioDuration = 0;
-  var title = '', artist = '', artwork = null;
-  var els = {};
-  var statusTimer = 0, switchTimer = 0, tickTimer = 0, saveAt = 0;
-  var listeners = [];
-
-  /* ---------- small helpers ---------- */
-  function $(sel, r) { return (r || d).querySelector(sel); }
-  function emit(name, extra) {
-    var detail = { player: api, mode: S.mode, time: api.getTime(), status: S.status };
-    if (extra) for (var k in extra) detail[k] = extra[k];
-    d.dispatchEvent(new CustomEvent('ctk:player:' + name, { bubbles: true, detail: detail }));
-  }
-  function store(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
-  }
-  function load(key) {
-    try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; }
-  }
-  function clamp(n, lo, hi) { return Math.min(Math.max(n, lo), hi); }
-  function fmt(s) {
-    s = Math.max(0, Math.floor(Number(s) || 0));
-    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
-    var mm = h ? (m < 10 ? '0' : '') + m : String(m);
-    return (h ? h + ':' : '') + mm + ':' + (x < 10 ? '0' : '') + x;
-  }
-  function el(tag, cls, attrs) {
-    var n = d.createElement(tag);
-    if (cls) n.className = cls;
-    if (attrs) for (var k in attrs) n.setAttribute(k, attrs[k]);
-    return n;
-  }
-  function svg(path, extra) {
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="100%" fill="none" aria-hidden="true" focusable="false"><path d="' + path + '" fill="currentColor"/>' + (extra || '') + '</svg>';
-  }
-  // Material Symbols (Apache 2.0), the set the site's button component draws from.
+  var mobile = w.matchMedia('(max-width: 991px)');
+  var YT_ENDED = 0, YT_PLAYING = 1, YT_PAUSED = 2, YT_BUFFERING = 3;
   var ICON = {
     play: 'M320-200v-560l440 280-440 280Z',
     pause: 'M560-200v-560h160v560H560Zm-320 0v-560h160v560H240Z',
+    replay: 'M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440h80q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l62 62-56 58-160-160 160-160 56 58-62 62h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80Z',
+    up: 'M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z',
     close: 'm256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z',
-    expand: 'M120-120v-320h80v184l504-504H520v-80h320v320h-80v-184L256-200h184v80H120Z',
-    listen: 'M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z',
-    watch: 'M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Zm240-40 240-160-240-160v320Z'
+    listen: 'M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z'
   };
 
-  /* ---------- CSS: behaviour only. Everything that is a look (the bar card, the buttons, the
-     progress edge, the title fade, the Listen button) is a real Designer class, editable in the
-     style panel: media-player_bar (+ is-visible), _info, _title, _time, _controls, _btn (+ is-play),
-     _progress, _progress-fill, _video, _listen (+ is-fallback). The rules below are the
-     ones the panel cannot express: attribute states, a CSS variable's value, and the bumps
-     for things that share the bottom edge. webflow/styles/media-player.css mirrors the classes. ---------- */
-  function css() {
-    if ($('style[data-player-style]')) return;
-    var s = el('style', null, { 'data-player-style': '' });
-    s.textContent = [
-      /* The root is a child of <body>, never of the page content, so a content swap never touches it.
-         It has no box of its own: the video box is laid over the stage and the bar is fixed. */
-      '.media-player{display:contents}',
-      '.video-embed[data-player-active]{aspect-ratio:auto;overflow:visible;border-radius:0;margin-bottom:0;transition:none}',
-      '.media-player_video iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}',
-      '.media-player_poster{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;margin:0;background:#000;cursor:pointer;display:block}',
-      '.media-player_poster img{width:100%;height:100%;object-fit:cover;display:block}',
-      '.media-player_poster-play{position:absolute;left:50%;top:50%;width:4.5rem;height:4.5rem;margin:-2.25rem 0 0 -2.25rem;border-radius:50%;display:grid;place-content:center;background:var(--_theme---accent-01,#cdaa66);color:var(--_theme---background-01,#141414);box-shadow:0 .5rem 1.5rem rgba(0,0,0,.35);transition:transform .15s ease}',
-      '.media-player_poster-play svg{width:2.25rem;height:2.25rem;margin-left:.2rem}',
-      '@media (hover:hover){.media-player_poster:hover .media-player_poster-play{transform:scale(1.06)}}',
-      '.media-player_poster:focus-visible{outline:3px solid var(--_theme---accent-01,#cdaa66);outline-offset:-3px}',
-      /* Away from the stage there is never a video on screen: the bar is all there is. A video
-         cannot keep playing hidden (YouTube policy, and iOS pauses it anyway), so leaving the
-         stage hands over to the audio, or pauses a sermon that has none. */
-      '.media-player[data-has-video="false"] .media-player_video,.media-player[data-presentation="floating"] .media-player_video,.media-player[data-presentation="hidden"] .media-player_video{display:none}',
-      '.media-player[data-over-sheet] .media-player_bar{z-index:1002}',
-      '@media (prefers-reduced-motion:reduce){.media-player_bar{transition:none}}',
-      /* Empty meta items, and the dividers beside them, drop out of the speaker · time · status line. */
-      /* A real <button> wearing the mockup's div classes: drop the browser's own button look. */
-      'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
-      '.media-player_time > [data-empty]{display:none}',
-      /* The fill is the played share of the track: laid over it from the left, its width the share.
-         (Not a flex basis: Safari resolves a percentage basis inside a flex-grown track to zero.)
-         The track thickens under a pointer. */
-      '.media-player_progress{touch-action:none}',
-      '.media-player_progress > .media-player_progress-fill{position:absolute;left:0;top:50%;transform:translateY(-50%);width:var(--player-progress,0%);flex:none;margin:0}',
-      '.media-player_progress:focus-visible::before,.media-player_progress:hover::before,.media-player_progress:focus-visible .media-player_progress-fill,.media-player_progress:hover .media-player_progress-fill{height:5px}',
-      /* Status messages are read out, not shown: the bar has no slot for them. */
-      '.media-player_status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}',
-      '.media-player_listen svg{width:100%;height:100%}',
-      '.media-player_listen.is-fallback svg{width:1.25rem;height:1.25rem}',
-      '.media-player_listen[aria-pressed="true"]{color:var(--_theme---accent-01)}',
-      'html[data-player-navigating] .page-wrapper{cursor:progress}',
-      /* Things that share the bottom edge with the bar move up by its height. */
-      'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
-      '.media-transcript.is-visible [data-transcript-sync]{bottom:calc(1rem + var(--player-dock-height,0px))}',
-      '.media-transcript.is-visible .media-transcript_body{padding-bottom:calc(1.5rem + var(--player-dock-height,0px))}'
-    ].join('\n');
-    d.head.appendChild(s);
-  }
+  var S = {
+    mode: 'watch', videoId: null, audioUrl: null, offset: 0,
+    title: '', artist: '', artwork: null, slug: '', known: 0, // known: CMS duration (s)
+    played: false,     // either source has played on this sermon
+    started: false,    // the audio has played on this sermon: the bar may dock
+    dismissed: false,  // the docked bar was closed
+    onStage: true,     // any of the stage is on screen
+    handoff: 'idle',   // idle · trying · blocked (Continue listening shown) · spent · done
+    unlocked: false, unlocking: false,
+    videoAt: null,     // start time cued into a video that has not played yet
+    pendingSeek: null, seekTries: 0, // audio seconds not yet reached by playing audio
+    resumed: false, autoplay: false, lastTime: 0
+  };
+  var stage = null, modes = null, root, bar, els = {}, audio = null, io = null, drawer = null, dr = {};
+  var yt = null, ytReady = false, ytQueue = [], iframe = null, poster = null;
 
-  /* ---------- DOM ---------- */
-  function button(name, label, icon, extra) {
-    var b = el('button', 'media-player_btn', { type: 'button', 'aria-label': label, 'data-player': name });
-    b.innerHTML = icon;
-    if (extra) for (var k in extra) b.setAttribute(k, extra[k]);
-    return b;
-  }
-  function metaItem(name, extra) {
-    var n = el('div', 'text-style-media-meta', { 'data-player': name });
-    if (extra) for (var k in extra) n.setAttribute(k, extra[k]);
+  function $(sel, r) { return (r || d).querySelector(sel); }
+  function el(tag, cls, attrs) {
+    var n = d.createElement(tag);
+    if (cls) n.className = cls;
+    for (var k in attrs || {}) n.setAttribute(k, attrs[k]);
     return n;
   }
-  function build() {
-    root = el('div', 'media-player', {
-      'data-player': 'root', role: 'region', 'aria-label': 'Sermon player',
-      'data-mode': S.mode, 'data-presentation': 'inline', 'data-status': 'idle', 'data-bar': 'off',
-      'data-has-video': String(!!videoId), 'data-has-audio': String(!!audioUrl)
-    });
-    videoBox = el('div', 'media-player_video', { 'data-player': 'video' });
-    bar = el('div', 'media-player_bar', { 'data-player': 'bar' });
+  function svg(path, cls) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="100%" fill="currentColor" aria-hidden="true"' +
+      (cls ? ' class="' + cls + '"' : '') + '><path d="' + path + '"/></svg>';
+  }
+  function clamp(n, lo, hi) { return Math.min(Math.max(n, lo), hi); }
+  function fmt(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x;
+  }
+  function emit(name, extra) {
+    var detail = { player: api, mode: S.mode, time: api.getTime() };
+    for (var k in extra || {}) detail[k] = extra[k];
+    d.dispatchEvent(new CustomEvent('ctk:player:' + name, { bubbles: true, detail: detail }));
+  }
 
-    // The same tree as the Designer mockup on the Media Template (data-player-mockup):
-    //   info (title; time row: elapsed · progress · duration) · controls (play/pause, close).
-    // The title goes back to the sermon page; the progress row inside it does not.
-    els.info = el('div', 'media-player_info', { 'data-player': 'info', role: 'button', tabindex: '0' });
-    els.title = el('div', 'text-style-title-small media-player_title', { 'data-player': 'title' });
-    els.title.textContent = title;
-    els.time = el('div', 'media-player_time', { 'aria-hidden': 'true' });
-    els.elapsed = metaItem('time');
-    els.progress = el('div', 'media-player_progress', {
-      'data-player': 'progress', role: 'slider', tabindex: '0', 'aria-label': 'Position',
-      'aria-valuemin': '0', 'aria-valuemax': '0', 'aria-valuenow': '0'
+  /* ---------- preference and positions ---------- */
+  function savedMode() {
+    try { var m = /(?:^|;\s*)ctk-playback-mode=(watch|listen)(?:;|$)/.exec(d.cookie); return m ? m[1] : null; } catch (e) { return null; }
+  }
+  function saveMode(mode) {
+    try { d.cookie = COOKIE + '=' + mode + '; Max-Age=31536000; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : ''); } catch (e) { /* blocked */ }
+  }
+  function positions() { try { return JSON.parse(localStorage.getItem(POS_KEY)) || {}; } catch (e) { return {}; } }
+  function savePos() {
+    if (!S.slug || !S.played) return;
+    var all = positions();
+    all[S.slug] = { t: Math.floor(api.getTime()), at: Date.now() };
+    var keys = Object.keys(all).sort(function (a, b) { return all[b].at - all[a].at; });
+    keys.slice(50).forEach(function (k) { delete all[k]; });
+    try { localStorage.setItem(POS_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
+  }
+  // Where to pick up a sermon heard before: once per page, not near either end.
+  function resumeAt() {
+    if (S.resumed) return 0;
+    S.resumed = true;
+    var p = positions()[S.slug], dur = api.getDuration();
+    return p && p.t > 15 && !(dur && p.t > dur - 30) ? p.t : 0;
+  }
+
+  /* ---------- audio ---------- */
+  function ensureAudio() {
+    if (!audio) {
+      audio = new Audio();
+      audio.preload = 'metadata';
+      audio.setAttribute('playsinline', '');
+      audio.addEventListener('playing', function () {
+        if (S.unlocking) return;
+        if (S.mode !== 'listen' && S.handoff !== 'trying') { audio.pause(); return; }
+        S.played = S.started = true; S.dismissed = false;
+        session(); place(); emit('play');
+      });
+      audio.addEventListener('pause', function () {
+        if (S.unlocking || S.mode !== 'listen') return;
+        savePos(); paint(); emit('pause');
+      });
+      audio.addEventListener('ended', ended);
+      ['loadedmetadata', 'canplay', 'playing', 'seeked'].forEach(function (ev) { audio.addEventListener(ev, applySeek); });
+      ['loadedmetadata', 'durationchange'].forEach(function (ev) { audio.addEventListener(ev, paint); });
+      audio.addEventListener('timeupdate', function () {
+        applySeek();
+        if (S.mode !== 'listen') return;
+        paint(); positionState();
+        if (Math.floor(audio.currentTime) % 5 === 0) savePos();
+      });
+    }
+    if (S.audioUrl && audio.getAttribute('src') !== S.audioUrl) { audio.src = S.audioUrl; S.pendingSeek = null; }
+    return audio;
+  }
+  function clampAudio(x) {
+    var dur = Math.max(audio && isFinite(audio.duration) ? audio.duration : 0, S.known + S.offset);
+    return dur > 1 ? clamp(x, 0, dur - 1) : Math.max(0, x);
+  }
+  // Seek on the video's clock. iOS can drop a seek made before playback starts, so it stays
+  // pending (and is re-applied) until playing audio has reached it.
+  function seekAudio(t) {
+    ensureAudio();
+    S.pendingSeek = t + S.offset; S.seekTries = 0;
+    applySeek();
+  }
+  function applySeek() {
+    if (S.pendingSeek === null || !audio || audio.readyState < 1) return;
+    var target = clampAudio(S.pendingSeek);
+    if (Math.abs(audio.currentTime - target) < 1.5) { if (!audio.paused && audio.readyState >= 3) S.pendingSeek = null; return; }
+    if (++S.seekTries > 40) { S.pendingSeek = null; return; }
+    try { audio.currentTime = target; } catch (e) { /* not seekable yet */ }
+  }
+  function startAudio() {
+    var p = ensureAudio().play();
+    if (p && p.catch) p.catch(paint);
+  }
+  // iOS lets code start an <audio> only once a tap has played it. The first tap on the page
+  // (outside YouTube's frame) plays it muted for an instant, so a later hand-off can start.
+  function unlock() {
+    if (S.unlocked || S.unlocking || S.mode !== 'watch' || !S.audioUrl || !mobile.matches) return;
+    var a = ensureAudio();
+    if (!a.paused) return;
+    S.unlocking = true;
+    a.muted = true;
+    var p = a.play();
+    function done(ok) {
+      if (ok) S.unlocked = true;
+      if (!S.unlocking) return;
+      S.unlocking = false;
+      if (S.handoff !== 'trying') a.pause();
+      a.muted = false;
+    }
+    if (p && p.then) p.then(function () { done(true); }, function () { done(false); });
+  }
+  function cancelUnlock() { if (S.unlocking) { S.unlocking = false; audio.pause(); audio.muted = false; } }
+
+  /* ---------- video ---------- */
+  function ytPlaying() {
+    var s = ytReady && yt.getPlayerState ? yt.getPlayerState() : -1;
+    return s === YT_PLAYING || s === YT_BUFFERING;
+  }
+  function ytTime() {
+    if (S.videoAt !== null) return S.videoAt;
+    if (ytReady && yt.getCurrentTime) { var t = yt.getCurrentTime(); if (t >= 0) S.lastTime = t; }
+    return S.lastTime;
+  }
+  function ytDuration() { return ytReady && yt.getDuration ? yt.getDuration() || 0 : 0; }
+  // Runs fn once the YouTube player is ready, creating it on first use.
+  function withVideo(fn) {
+    if (!S.videoId || !stage) return;
+    if (ytReady) { fn(); return; }
+    ytQueue.push(fn);
+    if (iframe) return;
+    iframe = el('iframe', null, {
+      src: 'https://www.youtube.com/embed/' + encodeURIComponent(S.videoId) +
+        '?rel=0&modestbranding=1&playsinline=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin),
+      title: S.title || 'Sermon video', frameborder: '0', allowfullscreen: '',
+      allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share',
+      referrerpolicy: 'strict-origin-when-cross-origin'
     });
-    els.fill = el('div', 'media-player_progress-fill');
-    els.progress.appendChild(els.fill);
-    els.duration = metaItem('duration');
-    els.time.appendChild(els.elapsed);
-    els.time.appendChild(els.progress);
-    els.time.appendChild(els.duration);
-    els.time.removeAttribute('aria-hidden'); // the slider inside must stay reachable
-    els.elapsed.setAttribute('aria-hidden', 'true');
-    els.duration.setAttribute('aria-hidden', 'true');
-    els.info.appendChild(els.title);
-    els.info.appendChild(els.time);
-    els.status = el('div', 'media-player_status', { 'data-player': 'status', role: 'status', 'aria-live': 'polite' });
+    stage.insertBefore(iframe, poster ? poster.nextSibling : stage.firstChild);
+    var mine = iframe;
+    youtubeAPI(function () {
+      if (mine !== iframe) return; // replaced by another sermon meanwhile
+      yt = new w.YT.Player(mine, { events: {
+        onReady: function () { if (mine !== iframe) return; ytReady = true; var q = ytQueue; ytQueue = []; q.forEach(function (f) { f(); }); },
+        onStateChange: onVideo
+      } });
+    });
+  }
+  function youtubeAPI(cb) {
+    if (w.YT && w.YT.Player) return cb();
+    var prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = function () { if (typeof prev === 'function') prev(); cb(); };
+    if (!$('script[src*="youtube.com/iframe_api"]')) d.head.appendChild(el('script', null, { src: 'https://www.youtube.com/iframe_api' }));
+  }
+  function onVideo(e) {
+    if (e.data === YT_BUFFERING && S.mode !== 'watch') { yt.pauseVideo(); return; }
+    if (e.data === YT_PLAYING) {
+      S.videoAt = null;
+      if (S.mode !== 'watch') { yt.pauseVideo(); return; }
+      S.played = true;
+      if (audio && !audio.paused && S.handoff !== 'trying') audio.pause();
+      var t = resumeAt();
+      if (t) yt.seekTo(t, true);
+      emit('play');
+    } else if (e.data === YT_PAUSED || e.data === YT_ENDED) {
+      if (S.mode !== 'watch') return;
+      ytTime(); savePos();
+      if (S.handoff === 'blocked') { S.handoff = 'spent'; place(); }
+      emit(e.data === YT_ENDED ? 'ended' : 'pause');
+    }
+  }
+  function seekVideo(t, play) {
+    withVideo(function () {
+      var s = yt.getPlayerState ? yt.getPlayerState() : -1;
+      t = Math.min(t, ytDuration() ? ytDuration() - 1 : t);
+      S.lastTime = t;
+      // A video that has never played (always the case on iOS until its own play button is
+      // tapped) ignores seekTo; loading it with a start time sticks, even if iOS blocks the play.
+      if (s === -1 || s === 5) {
+        S.videoAt = t;
+        yt[play ? 'loadVideoById' : 'cueVideoById']({ videoId: S.videoId, startSeconds: t });
+      } else {
+        yt.seekTo(t, true);
+        if (play) yt.playVideo();
+      }
+    });
+  }
+
+  /* ---------- modes ---------- */
+  function has(mode) { return mode === 'listen' ? !!S.audioUrl : !!S.videoId; }
+  function show(mode) {
+    S.mode = mode;
+    if (stage) stage.setAttribute('data-player-mode', mode);
+    if (mode === 'listen') { if (ytPlaying()) yt.pauseVideo(); }
+    else { if (audio && !audio.paused) audio.pause(); closeDrawer(); }
+    if (modes) Array.prototype.forEach.call(modes.querySelectorAll('[data-player-mode]'), function (b) {
+      var on = b.getAttribute('data-player-mode') === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    place();
+  }
+  // how: 'user' (the switch: remembered) · 'continue' (the blocked hand-off) · anything else.
+  function setMode(mode, how) {
+    if (standby) { if (how === 'user') { saveMode(mode); mark(mode); } return; }
+    if (!has(mode)) return;
+    if (how === 'user') saveMode(mode);
+    if (mode === S.mode) return;
+    var t = api.getTime(), playing = api.isPlaying();
+    S.resumed = true; // the switch carries the position; no jump to a remembered one
+    // A hand-off happens once per sermon; choosing Watch again also ends it.
+    S.handoff = how === 'continue' || mode === 'watch' ? 'done' : 'idle';
+    if (mode === 'listen') {
+      cancelUnlock();
+      seekAudio(t);
+      show('listen');
+      if (playing) startAudio(); // inside the tap: allowed everywhere
+    } else {
+      show('watch');
+      seekVideo(t, playing);
+    }
+    emit('mode');
+  }
+  // A playing video left the screen on a phone: try the audio before stopping the video.
+  function handoff() {
+    S.handoff = 'trying';
+    var a = ensureAudio();
+    cancelUnlock();
+    seekAudio(ytTime());
+    if (yt.mute) yt.mute(); // no echo while the audio starts
+    var p = a.play();
+    (p && p.then ? p : Promise.resolve()).then(function () {
+      if (S.handoff !== 'trying') return;
+      S.handoff = 'done';
+      show('listen');
+      if (yt.unMute) yt.unMute();
+      emit('mode', { auto: true });
+    }, function () {
+      if (S.handoff !== 'trying') return;
+      S.handoff = 'blocked'; // the video carries on; the bar offers one tap
+      if (yt.unMute) yt.unMute();
+      place();
+    });
+  }
+  function ended() {
+    savePos(); emit('ended');
+    var next = $('[data-series-next]');
+    if (S.mode === 'listen' && next && next.getAttribute('aria-hidden') !== 'true' && next.href && next.href.indexOf('#') === -1) {
+      S.autoplay = true;
+      nav.go(next.href, true);
+    } else paint();
+  }
+
+  /* ---------- controls: the docked bar, the stage overlay and the drawer ---------- */
+  var sets = [], overlay = null; // full control sets (stage overlay, drawer), painted together
+  function key(fn) { return function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } }; }
+  function back() { if (stage) stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); else if (S.href) nav.go(S.href, true); }
+  function openOrBack() { if (S.mode === 'listen') openDrawer(); else back(); }
+  // A large scrubber with times and −15 / play / +15. In the stage the buttons sit above.
+  function controlSet(parent, inStage) {
+    var c = {};
+    c.scrub = el('div', 'media-controls_scrub', { role: 'slider', tabindex: '0', 'aria-label': 'Position', 'aria-valuemin': '0' });
+    var track = c.track = el('div', 'media-controls_track');
+    c.thumb = el('div', 'media-controls_thumb');
+    c.bubble = el('div', 'media-controls_bubble text-style-mono', { 'aria-hidden': 'true' }); // the time while dragging
+    c.preview = el('div', 'media-controls_preview'); // mouse hover: where a click would jump
+    [el('div', 'media-controls_fill'), c.preview, c.thumb, c.bubble].forEach(function (n) { track.appendChild(n); });
+    c.scrub.appendChild(track);
+    var times = el('div', 'media-controls_times');
+    c.elapsed = el('div', 'text-style-media-meta'); c.left = el('div', 'text-style-media-meta');
+    times.appendChild(c.elapsed); times.appendChild(c.left);
+    var buttons = el('div', 'media-controls_buttons ' + (inStage ? 'is-overlay' : 'is-compact')); // compact: smaller with a mouse
+    function skip(sec) {
+      var b = el('button', 'media-player_btn is-skip' + (inStage ? '' : ' is-compact'), { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds' });
+      b.innerHTML = svg(ICON.replay, sec > 0 ? 'is-forward' : '') + '<span class="media-controls_skip-label" aria-hidden="true">' + Math.abs(sec) + '</span>';
+      b.addEventListener('click', function () { api.seek(api.getTime() + sec); });
+      return b;
+    }
+    c.play = el('button', 'media-player_btn is-play ' + (inStage ? 'is-large' : 'is-compact'), { type: 'button', 'vci-tooltip': '' });
+    c.play.innerHTML = svg(ICON.play);
+    c.playPath = c.play.querySelector('path');
+    c.play.addEventListener('click', function () { api.toggle(); });
+    buttons.appendChild(skip(-15)); buttons.appendChild(c.play); buttons.appendChild(skip(15));
+    var timeline = el('div', 'media-controls_timeline'); // scrubber + times: one piece in both places
+    timeline.appendChild(c.scrub); timeline.appendChild(times);
+    (inStage ? [buttons, timeline] : [timeline, buttons]).forEach(function (n) { parent.appendChild(n); });
+    scrubbing(c.scrub, track, c);
+    sets.push(c);
+    return c;
+  }
+  function build() {
+    root = el('div', 'media-player', { 'data-player': 'root', role: 'region', 'aria-label': 'Sermon audio player' });
+    bar = el('div', 'media-player_bar', { 'data-player': 'bar' });
+    els.info = el('div', 'media-player_info', { role: 'button', tabindex: '0' });
+    els.title = el('div', 'text-style-title-small media-player_title');
+    els.title.appendChild(el('span'));
+    els.time = el('div', 'media-player_time', { 'aria-hidden': 'true' });
+    els.elapsed = el('div', 'text-style-media-meta');
+    els.progress = el('div', 'media-player_progress');
+    els.progress.appendChild(el('div', 'media-player_progress-fill'));
+    els.duration = el('div', 'text-style-media-meta');
+    els.time.appendChild(els.elapsed); els.time.appendChild(els.progress); els.time.appendChild(els.duration);
+    els.info.appendChild(els.title); els.info.appendChild(els.time);
 
     var controls = el('div', 'media-player_controls');
-    // One svg > path, as in the mockup; paint() swaps the path between play and pause.
-    els.play = button('play', 'Play', svg(ICON.play));
+    els.play = el('button', 'media-player_btn is-play', { type: 'button', 'data-player': 'play', 'vci-tooltip': '' });
+    els.play.innerHTML = svg(ICON.play);
     els.playPath = els.play.querySelector('path');
-    els.play.classList.add('is-play');
-    controls.appendChild(els.play);
-    // Close is the site's icon-button, as in the mockup (an <a>, like the Spotify / Apple ones).
-    els.close = el('a', 'icon-button', { href: '#', role: 'button', tabindex: '0', 'aria-label': 'Close player', 'data-player': 'close', 'data-player-nav': 'off' });
+    // Continue listening: the site's primary button, shown only after a blocked hand-off.
+    els.cont = el('a', 'button', { href: '#', role: 'button', 'data-player': 'continue', 'data-player-nav': 'off' });
+    els.cont.innerHTML = '<div class="button-type">' + svg(ICON.listen, 'button-icon') + '<p class="text-button">Continue listening</p><div class="button-sheen"></div></div>';
+    // The chevron opens the player; only a blocked hand-off shows the close button.
+    els.expand = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Open player', 'data-player': 'expand', 'data-player-nav': 'off', 'vci-tooltip': '' });
+    els.expand.innerHTML = svg(ICON.up);
+    els.close = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Close player', 'data-player': 'close', 'data-player-nav': 'off', 'vci-tooltip': '' });
     els.close.innerHTML = svg(ICON.close);
-    controls.appendChild(els.close);
-
-    bar.appendChild(els.info);
-    bar.appendChild(controls);
-    bar.appendChild(els.status);
-    root.appendChild(videoBox);
+    [els.play, els.cont, els.expand, els.close].forEach(function (n) { controls.appendChild(n); });
+    bar.appendChild(els.info); bar.appendChild(controls);
     root.appendChild(bar);
     d.body.appendChild(root);
 
-    function inProgress(e) { var n = e.target; while (n && n !== els.info) { if (n === els.progress) return true; n = n.parentNode; } return false; }
+    function close() {
+      if (S.handoff === 'blocked') S.handoff = 'spent';
+      else { api.pause(); S.dismissed = true; }
+      place();
+    }
+    function cont() { setMode('listen', 'continue'); }
+    [[els.cont, cont], [els.expand, openDrawer], [els.close, close]].forEach(function (x) {
+      x[0].addEventListener('click', function (e) { e.preventDefault(); x[1](); });
+      x[0].addEventListener('keydown', key(x[1]));
+    });
     els.play.addEventListener('click', function () { api.toggle(); });
-    els.close.addEventListener('click', function (e) { e.preventDefault(); api.close(); });
-    els.close.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.close(); }
-    });
-    els.info.addEventListener('click', function (e) { if (!inProgress(e)) api.expand(); });
-    els.info.addEventListener('keydown', function (e) {
-      if (inProgress(e)) return;
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.expand(); }
-    });
-    root.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && S.barShown) { e.preventDefault(); api.close(); }
-    });
-    scrub();
-    paint();
+    // The whole bar opens the player; only its buttons do something else.
+    bar.addEventListener('click', function (e) { if (!e.target.closest('button, a')) openOrBack(); });
+    els.info.addEventListener('keydown', function (e) { if (e.target === els.info) key(openOrBack)(e); });
+
+    overlay = el('div', 'media-player_overlay', { 'data-player': 'overlay' });
+    controlSet(overlay, true);
+    buildDrawer();
   }
 
-  /* The "Listen" entry point on the sermon page: joins the "Listen on" Spotify / Apple
-     row as another icon button, or sits after the stage when that row is not there.
-     Pressing it starts the MP3 (and switches a playing video to audio). */
-  function injectListen() {
-    var old = $('[data-player="listen"]');
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-    els.listen = null;
-    if (!audioUrl) return;
-    var row = $('.media_platform-buttons .horz-flex') || $('.media_platform-buttons');
-    var a = el('a', 'icon-button media-player_listen', {
-      href: '#', role: 'button', 'aria-label': 'Listen here', 'aria-pressed': 'false', 'data-player': 'listen', 'data-player-nav': 'off'
-    });
-    a.innerHTML = svg(ICON.listen) + (row ? '' : '<span>Listen</span>');
-    if (row) row.insertBefore(a, row.firstChild);
-    else { a.className += ' is-fallback'; if (stage && stage.parentNode) stage.parentNode.insertBefore(a, stage.nextSibling); }
-    a.addEventListener('click', function (e) {
-      e.preventDefault();
-      if (S.mode === 'listen' && api.isPlaying()) { api.pause(); return; }
-      if (S.mode !== 'listen') api.setMode('listen');
-      if (!api.isPlaying()) api.play();
-    });
-    els.listen = a;
-  }
+  /* ---------- the drawer: a sheet on phones, a card over the bar on desktop ---------- */
+  function buildDrawer() {
+    drawer = el('div', 'media-drawer', { 'data-player': 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Audio player' });
+    var scrim = el('div', 'media-drawer_scrim');
+    var panel = dr.panel = el('div', 'media-drawer_panel');
+    // Header as on the site's other drawers (filters, transcript): grab, title, close.
+    var header = el('div', 'modal_header is-centered');
+    header.innerHTML = '<div class="modal_title">' + svg(ICON.listen, 'button-icon') + '<h2 class="heading-style-h5">Now playing</h2></div>';
+    // It collapses the player (the audio keeps playing): a chevron down on desktop, where the
+    // card folds back into the bar; the site's sheet × on phones.
+    dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Collapse player', 'vci-tooltip': '' });
+    function closeIcon() {
+      dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="button-icon"><path d="' + (mobile.matches ? 'M18 6 6 18M6 6l12 12' : 'm6 9 6 6 6-6') + '"></path></svg>';
+    }
+    closeIcon();
+    if (mobile.addEventListener) mobile.addEventListener('change', closeIcon); else if (mobile.addListener) mobile.addListener(closeIcon);
+    header.appendChild(dr.close);
+    var head = dr.head = el('a', 'media-drawer_head', { href: '#', 'data-player-nav': 'off' }), text = el('div', 'media-drawer_text');
+    dr.title = el('div', 'text-style-title-small media-player_title');
+    dr.title.appendChild(el('span'));
+    dr.artist = el('div', 'text-style-media-meta');
+    text.appendChild(dr.title); text.appendChild(dr.artist);
+    head.appendChild(text);
+    [el('div', 'media-drawer_grab', { 'aria-hidden': 'true' }), header, head].forEach(function (n) { panel.appendChild(n); });
+    dr.set = controlSet(panel, false);
+    drawer.appendChild(scrim); drawer.appendChild(panel);
+    drawer.inert = true;
+    root.appendChild(drawer);
 
-  /* The progress edge: pointer scrubbing (seek on release, fill follows the finger) and arrow keys. */
-  var scrubbing = null;
-  function fractionAt(e) {
-    var r = els.progress.getBoundingClientRect();
-    return r.width ? clamp((e.clientX - r.left) / r.width, 0, 1) : 0;
-  }
-  function scrub() {
-    var pr = els.progress;
-    pr.addEventListener('pointerdown', function (e) {
-      if (!api.getDuration()) return;
-      scrubbing = fractionAt(e);
-      pr.setPointerCapture && pr.setPointerCapture(e.pointerId);
-      paint();
+    scrim.addEventListener('click', closeDrawer);
+    // Desktop has no scrim to click: any click outside the player closes the card.
+    d.addEventListener('click', function (e) { if (!mobile.matches && !root.contains(e.target)) closeDrawer(); });
+    dr.close.addEventListener('click', closeDrawer);
+    // The title leads back to the sermon's page.
+    function toSermon(e) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
       e.preventDefault();
+      if (!dragged) { closeDrawer(); back(); }
+    }
+    head.addEventListener('click', toSermon);
+    drawer.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
+    // Drag the sheet down to close it.
+    var y0 = null, dy = 0, dragged = false;
+    panel.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('button, [role="slider"]')) return;
+      y0 = e.clientY; dy = 0; dragged = false;
     });
-    pr.addEventListener('pointermove', function (e) {
-      if (scrubbing === null) return;
-      scrubbing = fractionAt(e);
-      paint();
+    panel.addEventListener('pointermove', function (e) {
+      if (y0 === null) return;
+      dy = Math.max(0, e.clientY - y0);
+      if (dy > 4 && !dragged) { dragged = true; drawer.classList.add('is-dragging'); if (panel.setPointerCapture) panel.setPointerCapture(e.pointerId); }
+      drawer.style.setProperty('--drawer-drag', dy + 'px');
     });
     function release() {
-      if (scrubbing === null) return;
-      var f = scrubbing; // the last fraction under the pointer, not a fresh read: the row may have shifted
-      scrubbing = null;
-      api.seek(f * api.getDuration(), { play: false });
+      if (y0 === null) return;
+      y0 = null;
+      drawer.classList.remove('is-dragging');
+      drawer.style.removeProperty('--drawer-drag');
+      if (dy > 80) closeDrawer();
+      setTimeout(function () { dragged = false; }, 0);
     }
-    pr.addEventListener('pointerup', release);
-    pr.addEventListener('pointercancel', function () { scrubbing = null; paint(); });
+    panel.addEventListener('pointerup', release);
+    panel.addEventListener('pointercancel', release);
+  }
+  var lastFocus = null, morphTimer = null;
+  // Animate the card's height between the bar's and its own, so the bar seems to expand.
+  function morph(from, to) {
+    var p = dr.panel;
+    clearTimeout(morphTimer);
+    p.style.height = from + 'px';
+    void p.offsetHeight;
+    p.style.height = to + 'px';
+    morphTimer = setTimeout(function () { p.style.height = ''; }, 340);
+  }
+  function openDrawer() {
+    if (drawer.classList.contains('is-visible') || S.mode !== 'listen') return;
+    lastFocus = d.activeElement;
+    if (S.href) dr.head.href = S.href;
+    drawer.setAttribute('aria-modal', String(mobile.matches)); // desktop: a card, the page stays usable
+    drawer.inert = false;
+    drawer.classList.add('is-visible');
+    d.documentElement.classList.add('has-player-drawer');
+    paint();
+    if (!mobile.matches) morph(bar.offsetHeight, dr.panel.offsetHeight);
+    dr.set.play.focus({ preventScroll: true });
+  }
+  function closeDrawer() {
+    if (!drawer || !drawer.classList.contains('is-visible')) return;
+    if (!mobile.matches) morph(dr.panel.offsetHeight, bar.offsetHeight);
+    drawer.classList.remove('is-visible');
+    drawer.inert = true;
+    d.documentElement.classList.remove('has-player-drawer');
+    if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
+  }
+  // Docked once the audio has played: on desktop at once, as the sign that audio is playing;
+  // on phones only while the stage is off screen (or on another page). Also docked with
+  // Continue listening after a blocked hand-off while the stage is away.
+  function place() {
+    if (!bar) return;
+    var away = !stage || !S.onStage || (!mobile.matches && S.mode === 'listen');
+    var docked = away && (S.mode === 'listen' ? S.started && !S.dismissed : S.handoff === 'blocked');
+    bar.classList.toggle('is-visible', docked);
+    bar.setAttribute('data-state', S.mode === 'watch' && S.handoff === 'blocked' ? 'blocked' : '');
+    bar.inert = !docked;
+    d.body.classList.toggle('has-player-dock', docked);
+    paint();
+    if (docked) d.documentElement.style.setProperty('--player-dock-height', bar.offsetHeight + 'px');
+    else d.documentElement.style.removeProperty('--player-dock-height');
+  }
+  // A title too long for its line scrolls while playing, as Spotify does.
+  function title(box, playing) {
+    var span = box.firstChild;
+    if (span.textContent !== S.title) span.textContent = S.title;
+    var key = S.title + '|' + playing + '|' + box.clientWidth;
+    if (box._key === key) return;
+    box._key = key;
+    var over = span.scrollWidth - box.clientWidth, run = playing && over > 4;
+    box.classList.toggle('is-marquee', run);
+    if (!run) return;
+    var shift = over + box.clientWidth * 0.2; // ends clear of the fade on the right
+    box.style.setProperty('--marquee-shift', -shift + 'px');
+    box.style.setProperty('--marquee-time', (shift / 30 / 0.6).toFixed(1) + 's'); // 30px/s over the moving 60%
+  }
+  var scrubAt = null;
+  function paint() {
+    if (!bar) return;
+    var playing = S.mode === 'listen' && api.isPlaying();
+    var dur = S.mode === 'listen' ? api.getDuration() : 0;
+    var t = scrubAt === null ? api.getTime() : scrubAt * dur;
+    var pct = (dur ? clamp(t / dur, 0, 1) * 100 : 0).toFixed(2) + '%';
+    els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    els.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
+    title(els.title, playing);
+    els.info.setAttribute('aria-label', S.title + (S.mode === 'listen' ? ' — open player' : ' — back to the sermon'));
+    els.elapsed.textContent = fmt(t);
+    els.elapsed.style.minWidth = dur ? fmt(dur).length + 'ch' : '';
+    els.duration.textContent = dur ? fmt(dur) : '';
+    els.progress.style.setProperty('--player-progress', pct);
+    sets.forEach(function (c) {
+      c.scrub.style.setProperty('--player-progress', pct);
+      c.scrub.style.setProperty('--player-progress-n', (dur ? clamp(t / dur, 0, 1) : 0).toFixed(4));
+      c.scrub.setAttribute('aria-valuemax', String(Math.round(dur)));
+      c.scrub.setAttribute('aria-valuenow', String(Math.round(t)));
+      c.scrub.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
+      c.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+      c.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
+      c.elapsed.textContent = fmt(t);
+      if (c.scrub.classList.contains('is-scrubbing')) bubbleAt(c, dur ? clamp(t / dur, 0, 1) : 0, t);
+      else if (c.hoverAt != null) preview(c);
+      c.left.textContent = dur ? '-' + fmt(dur - t) : '';
+    });
+    title(dr.title, playing);
+    dr.artist.textContent = S.artist;
+  }
+  // pr takes the pointer and keys; the position is measured along track.
+  // Positions along the thumb's travel, so the bar and bubble line up with where the thumb would sit.
+  function travel(c, f) { var tw = c.track.offsetWidth, th = c.thumb.offsetWidth; return (tw - th) * f + th / 2; }
+  function bubbleAt(c, f, t) {
+    c.bubble.textContent = fmt(t);
+    var bw = c.bubble.offsetWidth;
+    c.bubble.style.left = clamp(travel(c, f) - bw / 2, 0, Math.max(0, c.track.offsetWidth - bw)) + 'px';
+  }
+  function preview(c) {
+    var dur = api.getDuration(), now = dur ? clamp(api.getTime() / dur, 0, 1) : 0, h = c.hoverAt;
+    var a = travel(c, Math.min(now, h)), b = travel(c, Math.max(now, h));
+    c.preview.style.left = a + 'px';
+    c.preview.style.width = (b - a) + 'px';
+    c.preview.classList.toggle('is-back', h < now); // behind the playhead: dims the played part
+    bubbleAt(c, h, h * dur);
+  }
+  function scrubbing(pr, track, c) {
+    var thumb = track.querySelector('.media-controls_thumb'), hoverTimer = null;
+    function at(e) { // along the thumb's travel, so it stays under the finger
+      var r = track.getBoundingClientRect(), tw = thumb ? thumb.offsetWidth : 0;
+      return r.width > tw ? clamp((e.clientX - r.left - tw / 2) / (r.width - tw), 0, 1) : 0;
+    }
+    // A mouse over the track previews the jump: a bar from the playhead to the pointer and,
+    // after a beat, the time there. Hidden while dragging, when the bubble shows the drag.
+    function unhover() { clearTimeout(hoverTimer); c.hoverAt = null; pr.classList.remove('is-hovering', 'is-hover-time'); }
+    pr.addEventListener('pointermove', function (e) {
+      if (scrubAt !== null || e.pointerType === 'touch' || !api.getDuration()) return;
+      c.hoverAt = at(e);
+      if (!pr.classList.contains('is-hovering')) {
+        pr.classList.add('is-hovering');
+        hoverTimer = setTimeout(function () { pr.classList.add('is-hover-time'); }, 100);
+      }
+      preview(c);
+    });
+    pr.addEventListener('pointerleave', unhover);
+    pr.addEventListener('pointerdown', function (e) {
+      if (!api.getDuration()) return;
+      unhover();
+      scrubAt = at(e);
+      pr.classList.add('is-scrubbing');
+      if (pr.setPointerCapture) pr.setPointerCapture(e.pointerId);
+      paint(); e.preventDefault();
+    });
+    pr.addEventListener('pointermove', function (e) { if (scrubAt !== null) { scrubAt = at(e); paint(); } });
+    pr.addEventListener('pointerup', function () {
+      if (scrubAt === null) return;
+      var f = scrubAt; scrubAt = null;
+      pr.classList.remove('is-scrubbing');
+      api.seek(f * api.getDuration());
+    });
+    pr.addEventListener('pointercancel', function () { scrubAt = null; pr.classList.remove('is-scrubbing'); paint(); });
     pr.addEventListener('keydown', function (e) {
-      var dur = api.getDuration();
+      var dur = api.getDuration(), t = api.getTime(), step = e.shiftKey ? 30 : 5;
       if (!dur) return;
-      var t = api.getTime(), step = e.shiftKey ? 30 : 5;
       if (e.key === 'ArrowRight' || e.key === 'ArrowUp') t += step;
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') t -= step;
       else if (e.key === 'Home') t = 0;
@@ -359,1041 +616,413 @@
       api.seek(clamp(t, 0, dur));
     });
   }
-
-  function buildIframe() {
-    if (!videoId) return;
-    iframe = videoBox.querySelector('iframe') || (stage && $('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]', stage));
-    if (iframe) {
-      if (iframe.parentNode !== videoBox) videoBox.appendChild(iframe); // one move, before the API attaches
-      if (iframe.src.indexOf('enablejsapi=1') === -1) {
-        iframe.src += (iframe.src.indexOf('?') === -1 ? '?' : '&') + 'enablejsapi=1&origin=' + encodeURIComponent(location.origin);
-      }
-      return;
-    }
-    iframe = d.createElement('iframe');
-    iframe.src = 'https://www.youtube.com/embed/' + encodeURIComponent(videoId) +
-      '?rel=0&modestbranding=1&playsinline=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
-    iframe.title = title || 'Sermon video';
-    iframe.setAttribute('frameborder', '0');
-    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
-    iframe.allowFullscreen = true;
-    videoBox.appendChild(iframe);
+  function css() {
+    var s = el('style', null, { 'data-player-style': '' });
+    s.textContent = [
+      '.media-player{display:contents}',
+      '.video-embed > iframe,.video-embed > [data-player="poster"]{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;transition:opacity .35s ease,visibility .35s,filter .35s ease}',
+      '.video-embed > [data-player="poster"]{object-fit:cover}',
+      '.video-embed > [data-player="overlay"]{transition:opacity .35s ease,visibility .35s}',
+      '.video-embed:not([data-player-mode="listen"]) > [data-player="overlay"]{opacity:0;visibility:hidden}',
+      '.video-embed[data-player-mode="listen"] > iframe{opacity:0;visibility:hidden;pointer-events:none}',
+      '.video-embed[data-player-mode="listen"] > [data-player="poster"],.video-embed[data-player-mode="standby"] > [data-player="poster"]{filter:brightness(.3)}',
+      'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
+      '.media-player_bar[data-state="blocked"] [data-player="expand"]{display:none}',
+      '.media-player_bar:not([data-state="blocked"]) [data-player="close"]{display:none}',
+      '.media-player_bar:not([data-state="blocked"]) [data-player="continue"],.media-player_bar[data-state="blocked"] [data-player="play"],.media-player_bar[data-state="blocked"] .media-player_time{display:none}',
+      '.media-player_time > :empty{display:none}',
+      '.media-player_progress > .media-player_progress-fill{position:absolute;left:0;top:50%;transform:translateY(-50%);width:var(--player-progress,0%);flex:none;margin:0}',
+      'html[data-player-navigating] .page-wrapper{cursor:progress}',
+      '.media-drawer{transition:visibility 0s linear .32s}',
+      '.media-drawer.is-visible{visibility:visible;pointer-events:auto;transition:none}',
+      '.media-drawer_scrim{transition:opacity .32s ease}',
+      '.media-drawer.is-visible .media-drawer_scrim{opacity:.7}',
+      '.media-drawer_panel{transform:translateY(100%);transition:transform .32s cubic-bezier(.22,1,.36,1);touch-action:none}',
+      '.media-drawer.is-visible .media-drawer_panel{transform:translateY(var(--drawer-drag,0px))}',
+      '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
+      'html.has-player-drawer{overflow:hidden}',
+      '@media (min-width: 992px){.media-drawer_panel,.media-drawer.is-visible .media-drawer_panel{transform:none;overflow:hidden;transition:height .32s cubic-bezier(.22,1,.36,1),border-radius .32s cubic-bezier(.22,1,.36,1)}.media-drawer.is-visible .media-drawer_panel{border-radius:var(--border-radius-medium,1rem)}.media-drawer_panel > *{opacity:0;transition:opacity .12s ease}.media-drawer.is-visible .media-drawer_panel > *{opacity:1;transition:opacity .2s ease .12s}html.has-player-drawer .media-player_bar{visibility:hidden}.media-drawer.is-visible{pointer-events:none}.media-drawer.is-visible .media-drawer_panel{pointer-events:auto}.media-drawer.is-visible .media-drawer_scrim{opacity:0}html.has-player-drawer{overflow:visible}}',
+      '.media-controls_scrub{touch-action:none}',
+      '.media-controls_fill{width:calc(var(--player-progress,0%) + (.5 - var(--player-progress-n,0)) * 1.25rem)}',
+      '.media-controls_thumb{left:calc(var(--player-progress,0%) - var(--player-progress-n,0) * 1.25rem);transform:translateY(-50%);transition:transform .15s ease}',
+      '.media-controls_scrub.is-scrubbing .media-controls_thumb,.media-controls_scrub:focus-visible .media-controls_thumb{transform:translateY(-50%) scale(1.3)}',
+      '.media-controls_buttons svg.is-forward{transform:scaleX(-1)}',
+      '.media-player_title > span{display:inline-block;white-space:nowrap}',
+      '.media-player_title.is-marquee > span{animation:ctk-marquee var(--marquee-time,10s) linear infinite}',
+      '@keyframes ctk-marquee{0%,20%{transform:none}80%,100%{transform:translateX(var(--marquee-shift,0))}}',
+      // While scrolling, fade the left edge in once the text moves and the right edge out once the end shows.
+      '@property --fade-l{syntax:"<length-percentage>";inherits:false;initial-value:0%}',
+      '@property --fade-r{syntax:"<length-percentage>";inherits:false;initial-value:20%}',
+      '.media-player_title.is-marquee{-webkit-mask-image:linear-gradient(90deg,#0000,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),#0000);mask-image:linear-gradient(90deg,#0000,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),#0000);animation:ctk-marquee-fade var(--marquee-time,10s) linear infinite}',
+      '@keyframes ctk-marquee-fade{0%,20%{--fade-l:0%;--fade-r:20%}24%,76%{--fade-l:15%;--fade-r:20%}80%,100%{--fade-l:15%;--fade-r:0%}}',
+      '@media (prefers-reduced-motion: reduce){.media-player_title.is-marquee > span,.media-player_title.is-marquee{animation:none}}',
+      '.media-controls_bubble{opacity:0;transform:translateY(.25rem);transition:opacity .15s ease,transform .15s ease}',
+      '.media-controls_scrub.is-scrubbing .media-controls_bubble,.media-controls_scrub.is-hover-time .media-controls_bubble{opacity:1;transform:none}',
+      '.media-controls_scrub:not(.is-hovering) .media-controls_preview{visibility:hidden}',
+      '.media-controls_scrub.is-hovering .media-controls_thumb{transform:translateY(-50%) scale(1.15)}',
+      '.media-controls_scrub{cursor:pointer}',
+      // Nothing at the bottom of the page sits under the docked bar.
+      // Room under the docked bar, inside the footer so it takes the footer's colour.
+      'body.has-player-dock footer.footer{border-bottom:var(--player-dock-height,0px) solid transparent}',
+      'body.has-player-dock .page-wrapper:not(:has(footer.footer)){padding-bottom:var(--player-dock-height,0px)}',
+      'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
+      '.media-transcript.is-visible [data-transcript-sync]{bottom:calc(1rem + var(--player-dock-height,0px))}',
+      '.media-transcript.is-visible .media-transcript_body{padding-bottom:calc(1.5rem + var(--player-dock-height,0px))}'
+    ].join('\n');
+    d.head.appendChild(s);
   }
 
-  /* ---------- click to load: the poster that stands in for the iframe ---------- */
-  function showPoster() {
-    if (!videoId || iframe || poster || !videoBox) return;
-    poster = d.createElement('button');
-    poster.type = 'button';
-    poster.className = 'media-player_poster';
-    poster.setAttribute('aria-label', 'Play video' + (title ? ': ' + title : ''));
-    var img = d.createElement('img');
-    img.alt = '';
-    img.decoding = 'async';
-    img.setAttribute('fetchpriority', 'high');
-    img.src = 'https://i.ytimg.com/vi_webp/' + encodeURIComponent(videoId) + '/maxresdefault.webp';
-    img.onerror = function () {
-      img.onerror = null;
-      img.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/hqdefault.jpg';
-    };
-    var play = d.createElement('span');
-    play.className = 'media-player_poster-play';
-    play.setAttribute('aria-hidden', 'true');
-    play.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>';
-    poster.appendChild(img);
-    poster.appendChild(play);
-    poster.addEventListener('click', function () {
-      if (S.mode !== 'watch') api.setMode('watch');
-      api.play();
-    });
-    videoBox.appendChild(poster);
-  }
-  function dropPoster() {
-    if (poster && poster.parentNode) poster.parentNode.removeChild(poster);
-    poster = null;
-  }
-  // What the click that built the player asked for, done once YouTube is ready.
-  function runPending() {
-    var p = pendingStart;
-    pendingStart = null;
-    if (!p || !yt) return;
-    var at = Math.max(0, Number(p.at) || 0);
-    if (!p.play) {
-      if (at) { ytHoldPause = true; yt.seekTo(at, true); }
-      return;
-    }
-    ytHoldPause = false;
-    if (at) yt.seekTo(at, true);
-    yt.playVideo();
-    clearTimeout(pendingTimer);
-    pendingTimer = setTimeout(function () {
-      // Not started (a browser that wants the tap inside the frame): stop
-      // spinning and let YouTube's own play button take it from here.
-      if (S.mode === 'watch' && S.status === 'loading' && !ytPlaying()) setStatus('paused');
-    }, 3000);
-  }
-
-  /* ---------- paint: state → DOM ---------- */
-  function paint() {
-    if (!root) return;
-    var playing = S.status === 'playing' || S.status === 'loading';
-    S.barShown = S.userStarted && !S.dismissed && S.status !== 'idle' && S.status !== 'ended';
-    root.setAttribute('data-mode', S.mode);
-    root.setAttribute('data-status', S.status);
-    root.setAttribute('data-presentation', S.presentation);
-    root.setAttribute('data-bar', S.barShown ? 'on' : 'off');
-    bar.classList.toggle('is-visible', S.barShown);
-    if (playing) els.play.setAttribute('data-on', ''); else els.play.removeAttribute('data-on');
-    els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    els.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
-    if (els.listen) {
-      var listening = S.mode === 'listen' && playing;
-      els.listen.setAttribute('aria-pressed', String(listening));
-      els.listen.setAttribute('aria-label', listening ? 'Pause audio' : 'Listen here');
-    }
-    els.info.setAttribute('aria-label', title + ' — back to the sermon page');
-
-    var dur = api.getDuration();
-    var t = scrubbing === null ? api.getTime() : scrubbing * dur;
-    els.elapsed.textContent = fmt(t);
-    els.duration.textContent = dur ? fmt(dur) : '';
-    // The elapsed time is as wide as the duration from the start, so the track between them
-    // does not shift under a finger as the digits change (the meta style is monospaced).
-    els.elapsed.style.minWidth = dur ? fmt(dur).length + 'ch' : '';
-    var pct = dur ? clamp(t / dur, 0, 1) * 100 : 0;
-    els.progress.style.setProperty('--player-progress', pct.toFixed(2) + '%');
-    els.progress.setAttribute('aria-valuemax', String(Math.round(dur)));
-    els.progress.setAttribute('aria-valuenow', String(Math.round(t)));
-    els.progress.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
-    els.duration.toggleAttribute('data-empty', !dur);
-
-    bar.inert = !S.barShown;
-    d.body.classList.toggle('has-player-dock', S.barShown);
-    if (S.barShown) {
-      d.documentElement.style.setProperty('--player-dock-height', bar.offsetHeight + 'px');
-    } else {
-      d.documentElement.style.removeProperty('--player-dock-height');
-    }
-  }
-  function setStatus(status) {
-    if (S.status === status) return;
-    S.status = status;
-    paint();
-    tick();
-  }
-  function say(msg, sticky) {
-    clearTimeout(statusTimer);
-    els.status.textContent = msg || '';
-    if (msg && !sticky) statusTimer = setTimeout(function () { els.status.textContent = ''; }, 4000);
-  }
-  function tick() {
-    clearInterval(tickTimer);
-    tickTimer = 0;
-    if (!S.userStarted) return;
-    tickTimer = setInterval(function () {
-      paint();
-      emit('time');
-      savePosition(false);
-    }, 400);
-  }
-
-  /* ---------- positions and preferences ---------- */
-  function savePosition(force) {
-    var now = Date.now();
-    if (!force && now - saveAt < 5000) return;
-    if (!S.userStarted) return;
-    saveAt = now;
-    var all = load(POS_KEY) || {};
-    all[S.slug] = { t: Math.floor(api.getTime()), mode: S.mode, at: now };
-    var keys = Object.keys(all).sort(function (a, b) { return all[b].at - all[a].at; });
-    if (keys.length > 50) keys.slice(50).forEach(function (k) { delete all[k]; });
-    store(POS_KEY, all);
-  }
-  function savePrefs() { store(PREF_KEY, { mode: S.mode, rate: S.rate, handoff: S.handoff }); }
-  function resumePoint() {
-    var all = load(POS_KEY) || {};
-    var p = all[S.slug];
-    if (!p || !(p.t > MIN_RESUME)) return 0;
-    var dur = api.getDuration();
-    if (dur && p.t > dur - END_SLACK) return 0;
-    return p.t;
-  }
-  var resumed = false;
-  function maybeResume() {
-    if (resumed) return 0;
-    resumed = true;
-    var t = resumePoint();
-    if (t) say('Resumed at ' + fmt(t));
-    return t;
-  }
-
-  /* ---------- YouTube adapter ---------- */
-  function ytTime() {
-    if (yt && ytReady && yt.getCurrentTime) {
-      var t = yt.getCurrentTime();
-      if (typeof t === 'number' && !isNaN(t)) S.lastTime = t;
-    }
-    return S.lastTime;
-  }
-  function ytState() { return yt && ytReady && yt.getPlayerState ? yt.getPlayerState() : -1; }
-  function ytPlaying() { var s = ytState(); return s === YT_PLAYING || s === YT_BUFFERING; }
-  function loadYT() {
-    if (!iframe) {
-      if (!videoId) return;
-      dropPoster();
-      buildIframe();
-      if (!iframe) return;
-    }
-    if (w.YT && w.YT.Player) return attachYT();
-    var prev = w.onYouTubeIframeAPIReady;
-    w.onYouTubeIframeAPIReady = function () {
-      if (typeof prev === 'function') prev();
-      attachYT();
-    };
-    if (!$('script[src*="youtube.com/iframe_api"]')) {
-      var t = d.createElement('script');
-      t.src = 'https://www.youtube.com/iframe_api';
-      d.head.appendChild(t);
-    }
-  }
-  function attachYT() {
-    if (yt || !iframe) return;
-    yt = new w.YT.Player(iframe, {
-      events: {
-        onReady: function () {
-          ytReady = true;
-          ytDuration = (yt.getDuration && yt.getDuration()) || 0;
-          if (S.rate !== 1 && yt.setPlaybackRate) yt.setPlaybackRate(S.rate);
-          api.ready = true;
-          paint();
-          emit('ready');
-          runPending();
-        },
-        onStateChange: function (e) {
-          var s = e.data;
-          if (s === YT_PLAYING) {
-            if (ytHoldPause) { ytHoldPause = false; yt.pauseVideo(); return; }
-            var first = started();
-            if (first) {
-              var t = maybeResume();
-              if (t) yt.seekTo(t, true);
-            }
-            if (S.mode === 'listen' && S.pending !== 'watch') {
-              // Someone pressed YouTube's own play while listening: video wins.
-              S.mode = 'watch';
-              if (audio) audio.pause();
-              savePrefs();
-              emit('mode');
-            }
-            if (S.pending === 'watch') { S.pending = null; clearTimeout(switchTimer); if (audio) audio.pause(); }
-            if (S.mode === 'watch') { setStatus('playing'); emit('play'); }
-          } else if (s === YT_PAUSED) {
-            if (S.mode === 'watch') { setStatus('paused'); savePosition(true); emit('pause'); }
-          } else if (s === YT_BUFFERING) {
-            if (S.mode === 'watch' && S.userStarted) setStatus('loading');
-          } else if (s === YT_ENDED) {
-            if (S.mode === 'watch') { setStatus('ended'); emit('ended'); }
-          } else if (s === YT_CUED) {
-            if (S.mode === 'watch' && !S.userStarted) setStatus('idle');
-          }
-          if (!ytDuration && yt.getDuration) ytDuration = yt.getDuration() || 0;
-        },
-        onPlaybackRateChange: function (e) {
-          if (S.mode === 'watch' && RATES.indexOf(e.data) !== -1 && e.data !== S.rate) {
-            S.rate = e.data; savePrefs(); paint();
-          }
-        },
-        onError: function () {
-          if (S.mode === 'watch') { setStatus('error'); say('Video unavailable', true); emit('error', { source: 'video' }); }
-        }
-      }
-    });
-  }
-
-  /* ---------- audio adapter ---------- */
-  function ensureAudio() {
-    if (audio || !audioUrl) return audio;
-    audio = new Audio();
-    audio.preload = 'metadata';
-    audio.setAttribute('playsinline', '');
-    audio.src = audioUrl;
-    audio.playbackRate = S.rate;
-    audio.addEventListener('playing', function () {
-      if (S.unlocking) { audio.pause(); return; }
-      if (S.mode !== 'listen') { audio.pause(); return; }
-      started();
-      if (S.pending === 'listen') {
-        S.pending = null;
-        if (S.autoLeave) logHandoff('audio playing');
-        S.autoLeave = false;
-        clearTimeout(switchTimer);
-        audio.muted = false;
-        if (yt && ytReady) { yt.pauseVideo(); if (yt.unMute) yt.unMute(); }
-      }
-      setStatus('playing');
-      session();
-      emit('play');
-    });
-    audio.addEventListener('pause', function () {
-      if (S.unlocking) { S.unlocking = false; S.unlocked = true; audio.muted = false; logHandoff('unlocked'); return; }
-      if (S.mode !== 'listen' || S.pending) return;
-      setStatus(audio.ended ? 'ended' : 'paused');
-      savePosition(true);
-      emit(audio.ended ? 'ended' : 'pause');
-    });
-    audio.addEventListener('waiting', function () { if (S.mode === 'listen' && S.userStarted) setStatus('loading'); });
-    audio.addEventListener('loadedmetadata', function () { audioDuration = audio.duration || audioDuration; paint(); });
-    audio.addEventListener('ratechange', function () {
-      if (S.mode === 'listen' && RATES.indexOf(audio.playbackRate) !== -1 && audio.playbackRate !== S.rate) {
-        S.rate = audio.playbackRate; savePrefs(); paint();
-      }
-    });
-    audio.addEventListener('error', function () {
-      audioFailed('Audio unavailable');
-    });
-    audio.addEventListener('timeupdate', positionState);
-    return audio;
-  }
-  function audioFailed(msg) {
-    var wasSwitching = S.pending === 'listen';
-    S.pending = null;
-    clearTimeout(switchTimer);
-    if (S.autoLeave) {
-      S.autoLeave = false;
-      logHandoff('audio failed: ' + msg);
-      S.mode = videoId ? 'watch' : 'listen';
-      if (yt && ytReady) { if (yt.unMute) yt.unMute(); yt.pauseVideo(); }
-      S.autoPaused = true;
-      say(msg + ' — paused', true);
-      setStatus('paused');
-      emit('mode');
-      emit('error', { source: 'audio' });
-      return;
-    }
-    if (videoId) {
-      S.mode = 'watch';
-      if (yt && ytReady) {
-        if (yt.unMute) yt.unMute();
-        if (wasSwitching && S.status !== 'paused') yt.playVideo();
-      }
-      say(msg + ' — back to video', true);
-      setStatus(ytPlaying() ? 'playing' : 'paused');
-      emit('mode');
-    } else {
-      setStatus('error');
-      say(msg, true);
-    }
-    emit('error', { source: 'audio' });
-  }
-  function audioTime() {
-    return audio ? Math.max(0, audio.currentTime - S.offset) : S.lastTime;
-  }
+  /* ---------- lock screen ---------- */
   function session() {
     if (!('mediaSession' in navigator)) return;
+    var ms = navigator.mediaSession;
     try {
-      var ms = navigator.mediaSession;
-      if (w.MediaMetadata) {
-        ms.metadata = new w.MediaMetadata({
-          title: title || d.title,
-          artist: artist || 'Christ the King Church',
-          album: 'Christ the King Church',
-          artwork: artwork ? [{ src: artwork, sizes: '480x360', type: 'image/jpeg' }] : []
-        });
-      }
-      var handlers = {
+      if (w.MediaMetadata) ms.metadata = new w.MediaMetadata({
+        title: S.title, artist: S.artist || 'Christ the King Church', album: 'Christ the King Church',
+        artwork: S.artwork ? [{ src: S.artwork, sizes: '480x360', type: 'image/jpeg' }] : []
+      });
+      var next = $('[data-series-next]');
+      var actions = {
         play: function () { api.play(); },
         pause: function () { api.pause(); },
-        seekbackward: function (x) { api.skip(-((x && x.seekOffset) || SKIP)); },
-        seekforward: function (x) { api.skip((x && x.seekOffset) || SKIP); },
-        seekto: function (x) { if (x && typeof x.seekTime === 'number') api.seek(x.seekTime - S.offset); }
+        seekbackward: function (x) { api.seek(api.getTime() - (x && x.seekOffset || 15)); },
+        seekforward: function (x) { api.seek(api.getTime() + (x && x.seekOffset || 15)); },
+        seekto: function (x) { if (x && typeof x.seekTime === 'number') api.seek(x.seekTime - S.offset); },
+        nexttrack: next && next.getAttribute('aria-hidden') !== 'true' ? function () { ended(); } : null
       };
-      for (var k in handlers) { try { ms.setActionHandler(k, handlers[k]); } catch (e) { /* unsupported action */ } }
+      for (var k in actions) { try { ms.setActionHandler(k, actions[k]); } catch (e) { /* unsupported */ } }
     } catch (e) { /* no media session */ }
   }
   function positionState() {
-    if (!audio || !('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
-    if (!(audio.duration > 0) || !isFinite(audio.duration)) return;
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: audio.duration,
-        playbackRate: audio.playbackRate,
-        position: clamp(audio.currentTime, 0, audio.duration)
-      });
-    } catch (e) { /* out of range */ }
+    var dur = api.getDuration() + S.offset;
+    if (!navigator.mediaSession || !navigator.mediaSession.setPositionState || !(dur > 0)) return;
+    try { navigator.mediaSession.setPositionState({ duration: dur, playbackRate: audio.playbackRate, position: clamp(audio.currentTime, 0, dur) }); } catch (e) { /* out of range */ }
   }
 
-  /* ---------- leaving the browser: video → audio hand-off ----------
-     A YouTube video stops when the tab is hidden or the phone locks, and may not
-     be played in the background anyway. The MP3 can carry on — if the browser
-     lets a hidden page start it. iOS only lets an <audio> element play from code
-     once it has been played inside a real user gesture, so the first tap, touch
-     or key on the page plays it muted for an instant (the "unlock"); while the
-     video plays, the paused audio is kept cued near the video's position so the
-     hand-over has little to fetch. On visibilitychange → hidden a playing video
-     hands over exactly like scrolling away does. If the audio cannot start, the
-     video is paused and the bar says so on return; nothing restarts on its own.
-     Attempts are logged to localStorage (ctkPlayer.handoffLog()) for testing on
-     real phones. */
-  var HANDOFF_LOG = 'ctk-player:handoff-log';
-  function logHandoff(what) {
-    var log = load(HANDOFF_LOG) || [];
-    log.push({ at: new Date().toISOString(), what: what, mode: S.mode, status: S.status, visible: d.visibilityState, slug: S.slug });
-    store(HANDOFF_LOG, log.slice(-40));
-  }
-  function unlockAudio() {
-    if (!audioUrl || S.unlocked || S.unlocking) return;
-    var a = ensureAudio();
-    if (!a || !a.paused) return;
-    S.unlocking = true;
-    a.muted = true;
-    var p = a.play();
-    if (p && p.catch) p.catch(function () { S.unlocking = false; a.muted = false; logHandoff('unlock refused'); });
-  }
-  // A real play from the same gesture takes over the unlock: it is the unlock.
-  function claimAudio() {
-    if (!S.unlocking) return;
-    S.unlocking = false;
-    S.unlocked = true;
-    if (audio) audio.muted = false;
-  }
-  var cueTimer = 0;
-  function cueAudio() {
-    if (!audio || !audioUrl || S.mode !== 'watch' || !ytPlaying() || !audio.paused || S.unlocking) return;
-    if (audio.readyState < 1) return;
-    var t = ytTime() + S.offset;
-    if (Math.abs(audio.currentTime - t) > 10) audio.currentTime = t;
-  }
-  function onHidden() {
-    if (d.visibilityState !== 'hidden') return;
-    savePosition(true);
-    if (!S.handoff || S.mode !== 'watch' || !(S.status === 'playing' || S.status === 'loading')) return;
-    if (!audioUrl) { logHandoff('hidden, no audio'); return; }
-    logHandoff(S.unlocked ? 'hidden, handing over' : 'hidden, handing over (not unlocked)');
-    leaveVideo();
-  }
-  function watchVisibility() {
-    ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) {
-      d.addEventListener(ev, unlockAudio, { capture: true, passive: true });
-    });
-    cueTimer = setInterval(cueAudio, 20000);
-    d.addEventListener('visibilitychange', onHidden);
-  }
-
-  /* ---------- presentation ---------- */
-  // Inline = the root laid over the stage in document coordinates (it scrolls
-  // with the page like any absolute box); the stage holds the root's height.
-  // Floating = position:fixed from the stylesheet. The root never moves in the
-  // DOM, so neither the iframe nor the audio is ever interrupted.
-  function place() {
-    if (!root || !stage || S.presentation !== 'inline') return;
-    var r = stage.getBoundingClientRect();
-    videoBox.style.left = Math.round(r.left + w.scrollX) + 'px';
-    videoBox.style.top = Math.round(r.top + w.scrollY) + 'px';
-    videoBox.style.width = Math.round(r.width) + 'px';
-    stage.style.height = videoBox.offsetHeight + 'px';
-    S.anchor = r.top + w.scrollY;
-  }
-  function setPresentation(p) {
-    if (S.presentation === p) return;
-    if (p === 'floating') videoBox.style.left = videoBox.style.top = videoBox.style.width = '';
-    S.presentation = p;
-    paint();
-    if (p === 'inline') place();
-    emit(p === 'floating' ? 'float' : p === 'inline' ? 'inline' : 'hidden');
-  }
-  // The video is leaving the screen (scrolled away, a link clicked). It may not keep
-  // playing hidden, so the audio takes over where there is any; otherwise it pauses
-  // and the bar stays, offering to bring you back.
-  function leaveVideo() {
-    if (S.mode !== 'watch' || !(S.status === 'playing' || S.status === 'loading')) return;
-    if (audioUrl) {
-      S.autoLeave = true;
-      api.setMode('listen');
-      if (S.pending !== 'listen') S.autoLeave = false;
-      return;
-    }
-    if (yt && ytReady) yt.pauseVideo();
-    S.autoPaused = true;
-    say('Paused — scroll back to the video');
-    paint();
-  }
-  // Where the stage is decides inline vs floating. The video only ever shows inline.
-  function applyRatio() {
-    if (!stage) {
-      if (S.presentation !== 'floating') setPresentation('floating');
-      return;
-    }
-    var ratio = S.ratio;
-    if (ratio >= FLOAT_IN) {
-      S.dismissed = false;
-      if (S.presentation !== 'inline') setPresentation('inline');
-      if (S.autoPaused && S.mode === 'watch') {
-        S.autoPaused = false;
-        say('');
-        if (yt && ytReady) { ytHoldPause = false; yt.playVideo(); }
-      }
-      if (S.playOnInline) { S.playOnInline = false; api.play(); }
-      paint();
-      return;
-    }
-    if (ratio < FLOAT_OUT && S.presentation === 'inline') {
-      if (S.barShown || S.userStarted) {
-        leaveVideo();
-        setPresentation('floating');
-      }
-    }
-  }
-  var io = null, ro = null, placeTick = 0;
-  function observeStage() {
-    if (io) io.disconnect();
-    if (ro) ro.disconnect();
-    if (!stage) return;
-    stage.setAttribute('data-player-active', '');
-    if ('IntersectionObserver' in w) {
-      io = new IntersectionObserver(function (entries) {
-        S.ratio = entries[entries.length - 1].intersectionRatio;
-        applyRatio();
-      }, { threshold: [0, FLOAT_OUT, FLOAT_IN, 1] });
-      io.observe(stage);
-    }
-    if ('ResizeObserver' in w) {
-      ro = new ResizeObserver(function () { place(); paint(); });
-      ro.observe(stage);
-      ro.observe(bar);
-    }
-    place();
-  }
-  function attachStage(el) {
-    stage = el || null;
-    S.ratio = stage ? 1 : 0;
-    observeStage();
-    applyRatio();
-  }
-  function watchPage() {
-    w.addEventListener('resize', place);
-    w.addEventListener('load', place);
-    if (d.fonts && d.fonts.ready) d.fonts.ready.then(place);
-    // Anything above the stage changing height moves it: a cheap check per scroll frame.
-    w.addEventListener('scroll', function () {
-      if (placeTick || !stage || S.presentation !== 'inline') return;
-      placeTick = requestAnimationFrame(function () {
-        placeTick = 0;
-        var top = stage.getBoundingClientRect().top + w.scrollY;
-        if (Math.abs(top - S.anchor) > 1) place();
-      });
-    }, { passive: true });
-    d.addEventListener('vci:modal:open', function (e) {
-      if (!e.detail || e.detail.key !== 'transcript') return;
-      S.sheet = true;
-      root.setAttribute('data-over-sheet', '');
-      if (audioUrl) leaveVideo(); // the sheet covers the video; audio carries on underneath
-      paint();
-    });
-    d.addEventListener('vci:modal:close', function (e) {
-      if (!e.detail || e.detail.key !== 'transcript') return;
-      S.sheet = false;
-      root.removeAttribute('data-over-sheet');
-      paint();
-    });
-  }
-  // Playback has started: the bar may now float (and must, over an open sheet).
-  function started() {
-    S.dismissed = false;
-    if (S.userStarted) return false;
-    S.userStarted = true;
-    applyRatio();
-    return true;
-  }
-
-  /* ---------- the API ---------- */
+  /* ---------- API ---------- */
   var api = {
-    ready: false,
     hasVideo: false,
     hasAudio: false,
     getMode: function () { return S.mode; },
-    getStatus: function () { return S.status; },
-    getPresentation: function () { return S.presentation; },
-    isPlaying: function () { return S.status === 'playing' || S.status === 'loading'; },
-    getTime: function () { return S.mode === 'listen' ? audioTime() : ytTime(); },
-    getDuration: function () {
-      if (S.mode === 'listen' && audio && audio.duration > 0 && isFinite(audio.duration)) return audio.duration - S.offset;
-      return ytDuration || audioDuration || 0;
+    getTime: function () {
+      if (S.mode !== 'listen') return ytTime();
+      if (S.pendingSeek !== null) return Math.max(0, S.pendingSeek - S.offset);
+      return audio ? Math.max(0, audio.currentTime - S.offset) : S.lastTime;
     },
-    getRate: function () { return S.rate; },
+    // iOS can briefly report a short duration after a seek into unloaded audio, so the
+    // length is never less than what YouTube or the CMS (the page's JSON-LD) says.
+    getDuration: function () {
+      var a = S.mode === 'listen' && audio && audio.duration > 1 && isFinite(audio.duration) ? audio.duration - S.offset : 0;
+      return Math.max(a, ytDuration(), S.known);
+    },
+    isPlaying: function () { return S.mode === 'listen' ? !!audio && !audio.paused && !S.unlocking : ytPlaying(); },
     play: function () {
-      if (S.mode === 'watch' && videoId && S.presentation !== 'inline') {
-        if (audioUrl) { S.autoPaused = false; api.setMode('listen'); api.play(); return; }
-        S.playOnInline = true;
-        api.expand();
-        return;
-      }
-      S.autoPaused = false;
-      if (S.mode === 'listen' && audioUrl) {
-        ensureAudio();
-        claimAudio();
-        if (!S.userStarted) { var t0 = maybeResume(); if (t0) audio.currentTime = t0 + S.offset; }
-        var p = audio.play();
-        if (p && p.catch) p.catch(function () { audioFailed('Audio did not start'); });
-        return;
-      }
-      if (yt && ytReady) {
-        ytHoldPause = false;
-        if (!S.userStarted) { var t1 = maybeResume(); if (t1) yt.seekTo(t1, true); }
-        yt.playVideo();
-      } else if (videoId) {
-        setStatus('loading');
-        pendingStart = { play: true, at: S.lastTime || 0 };
-        loadYT();
-      }
+      if (S.mode === 'listen') {
+        cancelUnlock();
+        var t = resumeAt();
+        if (t) seekAudio(t);
+        startAudio();
+      } else withVideo(function () { yt.playVideo(); });
     },
     pause: function () {
-      S.autoPaused = false;
-      S.playOnInline = false;
-      if (S.mode === 'listen') { if (audio) audio.pause(); paint(); return; }
-      if (yt && ytReady) yt.pauseVideo();
-      paint();
+      if (S.mode === 'listen') { if (audio) audio.pause(); } else if (ytReady) yt.pauseVideo();
     },
     toggle: function () { if (api.isPlaying()) api.pause(); else api.play(); },
     seek: function (s, opts) {
-      opts = opts || {};
+      if (standby) { take(function () { api.seek(s, { play: true }); }); return; } // a transcript time plays this sermon
       s = Math.max(0, Number(s) || 0);
-      if (S.mode === 'listen' && audioUrl) {
-        ensureAudio();
-        audio.currentTime = s + S.offset;
-        if (opts.play) api.play();
-      } else if (yt && ytReady) {
-        var st = ytState();
-        if (!opts.play && (st === -1 || st === YT_CUED)) ytHoldPause = true; // seekTo starts an unstarted player
-        yt.seekTo(s, true);
-        if (opts.play) { ytHoldPause = false; yt.playVideo(); }
-      } else {
-        S.lastTime = s;
-        if (videoId && S.mode === 'watch' && (opts.play || iframe)) {
-          pendingStart = { play: !!opts.play, at: s };
-          if (opts.play) setStatus('loading');
-          loadYT();
-        }
-      }
-      if (opts.play) started();
-      paint();
-      emit('time');
+      var play = opts && opts.play;
+      S.resumed = true;
+      if (S.mode === 'listen') { cancelUnlock(); seekAudio(s); if (play) startAudio(); paint(); }
+      else seekVideo(s, play);
     },
-    skip: function (dx) { api.seek(clamp(api.getTime() + dx, 0, api.getDuration() || Infinity)); },
-    setRate: function (r) {
-      r = Number(r);
-      if (!(r > 0)) return;
-      S.rate = r;
-      if (yt && ytReady && yt.setPlaybackRate) yt.setPlaybackRate(r);
-      if (audio) audio.playbackRate = r;
-      savePrefs();
-      paint();
-    },
-    setMode: function (mode) {
-      if (mode === S.mode) return;
-      if (mode === 'listen' && !audioUrl) return;
-      if (mode === 'watch' && !videoId) return;
-      if (mode === 'watch' && S.presentation !== 'inline') {
-        // Watch only happens on screen: go back to the video and switch there.
-        S.playOnInline = api.isPlaying();
-        if (S.playOnInline) api.pause();
-        S.mode = 'watch';
-        savePrefs();
-        emit('mode');
-        api.expand();
-        return;
-      }
-      var t = api.getTime();
-      var wasPlaying = api.isPlaying();
-      clearTimeout(switchTimer);
-      S.mode = mode;
-      S.pending = wasPlaying ? mode : null;
-      savePrefs();
-      emit('mode');
-      if (mode === 'listen') {
-        ensureAudio();
-        claimAudio();
-        audio.playbackRate = S.rate;
-        audio.currentTime = t + S.offset;
-        if (wasPlaying) {
-          setStatus('loading');
-          if (yt && ytReady && yt.mute) yt.mute(); // no echo during the overlap
-          audio.muted = true;                       // and no stray second of audio before the seek lands
-          var p = audio.play();
-          if (p && p.catch) p.catch(function () { audioFailed('Audio did not start'); });
-          switchTimer = setTimeout(function () { if (S.pending === 'listen') audioFailed('Audio did not start'); }, SWITCH_TIMEOUT);
-        } else {
-          if (yt && ytReady && ytPlaying()) yt.pauseVideo();
-          setStatus('paused');
-        }
-        say('Switched to audio');
-      } else {
-        if (audio && !wasPlaying) audio.pause();
-        if (yt && ytReady) {
-          var st = ytState();
-          if (!wasPlaying && (st === -1 || st === YT_CUED)) ytHoldPause = true;
-          yt.seekTo(t, true);
-          if (wasPlaying) {
-            setStatus('loading');
-            ytHoldPause = false;
-            yt.playVideo();
-            switchTimer = setTimeout(function () {
-              if (S.pending !== 'watch') return;
-              // Video never started: keep the audio going rather than going silent.
-              S.pending = null;
-              S.mode = 'listen';
-              say('Video did not start — still on audio', true);
-              setStatus(audio && !audio.paused ? 'playing' : 'paused');
-              savePrefs();
-              emit('mode');
-            }, SWITCH_TIMEOUT);
-          } else {
-            setStatus('paused');
-          }
-        } else {
-          S.lastTime = t;
-          setStatus(wasPlaying ? 'loading' : 'paused');
-          pendingStart = { play: wasPlaying, at: t };
-          loadYT();
-        }
-        say('Switched to video');
-      }
-      paint();
-    },
-    expand: function () {
-      S.dismissed = false;
-      if (!stage) {
-        // Away from the sermon page: the title takes you back to it.
-        if (S.href) nav.go(S.href, true);
-        return;
-      }
-      stage.scrollIntoView({ behavior: reduced.matches ? 'auto' : 'smooth', block: 'center' });
-      setTimeout(function () { if (S.presentation === 'floating' && !S.sheet) setPresentation('inline'); }, reduced.matches ? 0 : 400);
-    },
-    close: function () {
-      api.pause();
-      S.dismissed = true;
-      savePosition(true);
-      paint();
-    },
-    setHandoff: function (on) { S.handoff = !!on; savePrefs(); },
-    getHandoff: function () { return S.handoff; },
-    handoffLog: function () { return load(HANDOFF_LOG) || []; },
-    setAudio: function (url) {
-      audioUrl = url || null;
-      api.hasAudio = !!audioUrl;
-      if (audio) { audio.pause(); audio = null; }
-      if (root) {
-        root.setAttribute('data-has-audio', String(!!audioUrl));
-        injectListen();
-        paint();
-      }
-    },
-    on: function (name, fn) {
-      d.addEventListener('ctk:player:' + name, fn);
-      listeners.push([name, fn]);
-      return function () { d.removeEventListener('ctk:player:' + name, fn); };
-    }
+    setMode: function (mode) { setMode(mode, 'user'); }
   };
   w.ctkPlayer = api;
 
-  /* ---------- items ---------- */
-  function readStage(el) {
-    var qs = null;
-    try { qs = new URLSearchParams(location.search).get('ctk-audio'); } catch (e) { /* old browser */ }
+  /* ---------- sermons ---------- */
+  function findStage() { return $('[data-player="stage"]') || $('.video-embed[data-video]') || $('[data-youtube-id]'); }
+  function read(el) {
     return {
-      videoId: (el.getAttribute('data-player-youtube') || el.getAttribute('data-youtube-id') || '').trim() || null,
-      audioUrl: (qs || el.getAttribute('data-player-audio') || el.getAttribute('data-audio-url') || '').trim() || null,
-      offset: Number(el.getAttribute('data-audio-offset')) || 0,
-      audioDuration: Number(el.getAttribute('data-audio-duration')) || 0
+      videoId: (el.getAttribute('data-youtube-id') || '').trim() || null,
+      audioUrl: (el.getAttribute('data-audio-url') || '').trim() || null,
+      offset: Number(el.getAttribute('data-audio-offset')) || 0
     };
+  }
+  function observe() {
+    if (io) io.disconnect();
+    S.onStage = !!stage;
+    if (!stage || !('IntersectionObserver' in w)) return;
+    io = new IntersectionObserver(function (entries) {
+      S.onStage = entries[entries.length - 1].isIntersecting;
+      if (!S.onStage && S.mode === 'watch' && S.handoff === 'idle' && S.audioUrl && mobile.matches && ytPlaying()) handoff();
+      place();
+    }, { threshold: 0 });
+    io.observe(stage);
+  }
+  function wireModes() {
+    modes = $('[data-player-modes]');
+    if (!modes) return;
+    modes.style.display = S.videoId && S.audioUrl ? '' : 'none';
+    if (modes.hasAttribute('data-wired')) return;
+    modes.setAttribute('data-wired', '');
+    modes.setAttribute('role', 'radiogroup');
+    if (!modes.hasAttribute('aria-label')) modes.setAttribute('aria-label', 'Watch or listen');
+    var btns = Array.prototype.slice.call(modes.querySelectorAll('[data-player-mode]'));
+    btns.forEach(function (b, i) {
+      b.setAttribute('role', 'radio');
+      b.addEventListener('click', function () { setMode(b.getAttribute('data-player-mode'), 'user'); });
+      b.addEventListener('keydown', function (e) {
+        var step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        var to = btns[(i + step + btns.length) % btns.length];
+        setMode(to.getAttribute('data-player-mode'), 'user');
+        to.focus();
+      });
+    });
   }
   function readPage() {
     var h1 = $('h1');
-    title = h1 ? h1.textContent.trim() : d.title;
-    artist = Array.prototype.map.call(d.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) {
-      return n.textContent.trim();
-    }).filter(Boolean).join(', ');
-    artwork = videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/hqdefault.jpg' : null;
-    if (els.title) els.title.textContent = title;
+    S.title = h1 ? h1.textContent.trim() : d.title;
+    S.artist = Array.prototype.map.call(d.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) { return n.textContent.trim(); }).filter(Boolean).join(', ');
+    S.artwork = S.videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/hqdefault.jpg' : null;
+    var ld = $('script[type="application/ld+json"]'), m = ld && /"duration"\s*:\s*"PT(\d+)S"/.exec(ld.textContent);
+    S.known = m ? Number(m[1]) : 0;
   }
-  // Load the sermon on this page into the player (first load, or a new sermon reached by navigation).
+  // A (new) stage element: the thumbnail behind the video, which is created on first use.
+  function use(node) {
+    stage = node; iframe = null; poster = null; yt = null; ytReady = false; ytQueue = [];
+    node.appendChild(overlay);
+    if (!S.videoId) return;
+    poster = node.insertBefore(el('img', null, { 'data-player': 'poster', alt: '', src: 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/maxresdefault.jpg' }), node.firstChild);
+    poster.onload = function () { if (this.naturalWidth <= 120) { this.onload = null; this.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/hqdefault.jpg'; } }; // no HD thumbnail
+  }
+  // Load the sermon on this page (first load, or another sermon reached in place).
   function mount(el) {
-    var src = readStage(el);
-    if (!src.videoId && !src.audioUrl) { el.style.display = 'none'; return false; }
-    clearTimeout(switchTimer);
-    clearInterval(tickTimer); tickTimer = 0;
-    if (audio) { audio.pause(); audio = null; }
-    if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    iframe = null; yt = null; ytReady = false; ytHoldPause = false; ytDuration = 0;
-    dropPoster(); pendingStart = null; clearTimeout(pendingTimer);
-    videoId = src.videoId; audioUrl = src.audioUrl; S.offset = src.offset; audioDuration = src.audioDuration;
-    api.hasVideo = !!videoId; api.hasAudio = !!audioUrl; api.ready = false;
-    S.slug = location.pathname.replace(/\/+$/, '').split('/').pop() || 'home';
+    var src = read(el);
+    if (audio) { cancelUnlock(); audio.pause(); }
+    S.videoId = src.videoId; S.audioUrl = src.audioUrl; S.offset = src.offset;
+    use(el);
+    S.slug = location.pathname.replace(/\/+$/, '').split('/').pop();
     S.href = location.pathname + location.search;
-    S.mode = 'watch'; S.status = 'idle'; S.userStarted = false; S.dismissed = false; S.pending = null; S.lastTime = 0; S.sheet = false;
-    S.autoPaused = false; S.autoLeave = false; S.playOnInline = false; S.unlocked = false; S.unlocking = false;
-    resumed = false; scrubbing = null;
-    var prefs = load(PREF_KEY) || {};
-    if (RATES.indexOf(prefs.rate) !== -1) S.rate = prefs.rate;
-    if (prefs.mode === 'listen' && audioUrl) S.mode = 'listen';
-    if (prefs.handoff === false) S.handoff = false;
-    if (!videoId) S.mode = 'listen';
-    if (!audioUrl) S.mode = 'watch';
-    if (!root) { css(); build(); }
-    root.removeAttribute('data-over-sheet');
-    root.setAttribute('data-has-video', String(!!videoId));
-    root.setAttribute('data-has-audio', String(!!audioUrl));
+    S.played = S.started = false; S.dismissed = false; S.handoff = 'idle'; S.videoAt = null;
+    S.pendingSeek = null; S.resumed = false; S.lastTime = 0;
+    api.hasVideo = !!S.videoId; api.hasAudio = !!S.audioUrl;
     readPage();
-    say('');
-    // Click to load: the poster, not the iframe. loadYT() builds the iframe
-    // on the first play / seek / switch to Watch.
-    showPoster();
-    if (S.mode === 'listen') { ensureAudio(); api.ready = true; }
-    if (S.presentation === 'hidden') S.presentation = 'inline';
-    attachStage(el);
-    injectListen();
-    if (!videoId) el.style.display = 'none';
-    paint();
-    emit('ready');
-    return true;
+    wireModes();
+    if (!S.videoId && !S.audioUrl) { el.style.display = 'none'; stage = null; observe(); show('watch'); return; }
+    var want = S.autoplay ? 'listen' : savedMode() || 'watch';
+    if (!has(want)) want = want === 'listen' ? 'watch' : 'listen';
+    if (want === 'listen') ensureAudio();
+    observe();
+    show(want);
+    if (want === 'watch') withVideo(function () {});
+    if (S.autoplay) { S.autoplay = false; S.resumed = true; if (want === 'listen') startAudio(); }
   }
-  // A page was swapped in: the same sermon re-anchors, a different one loads, none leaves the bar floating.
+  // After an in-place swap: the same sermon re-anchors, another one loads, no stage docks the bar.
   function adopt() {
-    dropMockups();
-    var el = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
-    if (!el) { attachStage(null); return; }
-    var src = readStage(el);
-    if (src.videoId === videoId && src.audioUrl === audioUrl) {
-      S.sheet = false;
-      root.removeAttribute('data-over-sheet');
-      S.href = location.pathname + location.search;
-      readPage();
-      attachStage(el);
-      injectListen();
-      if (!videoId) el.style.display = 'none';
-      paint();
+    dropMockups(); // every page brings the Designer mockup again
+    standby = null;
+    var el = findStage();
+    if (!el) { stage = null; observe(); place(); return; }
+    var src = read(el);
+    if (!S.autoplay && src.videoId === S.videoId && src.audioUrl === S.audioUrl) {
+      use(el); S.href = location.pathname + location.search;
+      api.hasVideo = !!S.videoId; api.hasAudio = !!S.audioUrl;
+      wireModes(); observe(); show(S.mode);
       return;
     }
-    savePosition(true);
-    api.pause();
+    // Another sermon while one is still in the bar: it waits until it is actually played.
+    if (!S.autoplay && S.mode === 'listen' && S.started && !S.dismissed) { wait(el, src); return; }
+    savePos();
     mount(el);
   }
 
-  /* ---------- navigation: keep the page alive while the sermon plays ----------
-     A normal link unloads the document and everything in it, the audio included.
-     While the player is active (started and not closed), same-site links fetch the
-     next page and swap its content in place: the announcement bar, navbar and
-     footer stay (they are the same on every page), the sections between them are
-     replaced, the new page's own scripts run, and Webflow, Finsweet and narthex
-     are told about the new content. Closing the player returns the site to
-     ordinary navigation. Modifier-clicks, new-tab links, hashes, downloads and
-     files are always left to the browser. */
+  // Another sermon's stage while the current one keeps playing in the bar: its thumbnail and a
+  // play button. Playing it (the button, a transcript time, the Listen/Watch choice then play)
+  // is what hands the player over to it; until then the bar keeps the sermon it has.
+  var standby = null;
+  function wait(node, src) {
+    standby = node; stage = null;
+    api.hasVideo = api.hasAudio = false; // the transcript reads no time from the other sermon
+    node.setAttribute('data-player-mode', 'standby');
+    if (src.videoId) node.insertBefore(el('img', null, { 'data-player': 'poster', 'data-player-standby': '', alt: '', src: 'https://i.ytimg.com/vi/' + encodeURIComponent(src.videoId) + '/hqdefault.jpg' }), node.firstChild);
+    var ov = el('div', 'media-player_overlay', { 'data-player-standby': '' });
+    var row = el('div', 'media-controls_buttons is-overlay');
+    var go = el('button', 'media-player_btn is-play is-large', { type: 'button', 'aria-label': 'Play this sermon', 'vci-tooltip': '' });
+    go.innerHTML = svg(ICON.play);
+    go.addEventListener('click', function () { take(function () { api.play(); }); });
+    row.appendChild(go); ov.appendChild(row); node.appendChild(ov);
+    wireModes();
+    if (modes) {
+      modes.style.display = src.videoId && src.audioUrl ? '' : 'none';
+      mark(savedMode() || 'watch');
+    }
+    observe(); place();
+  }
+  // The Watch/Listen switch while waiting only picks how it will play.
+  function mark(mode) {
+    Array.prototype.forEach.call(modes.querySelectorAll('[data-player-mode]'), function (b) {
+      var on = b.getAttribute('data-player-mode') === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+  }
+  function take(then) {
+    var node = standby;
+    if (!node) return;
+    standby = null;
+    Array.prototype.forEach.call(node.querySelectorAll('[data-player-standby]'), function (n) { n.parentNode.removeChild(n); });
+    node.removeAttribute('data-player-mode');
+    savePos();
+    mount(node);
+    if (then) then();
+  }
+
+  /* ---------- in-place navigation while the audio plays ----------
+     Same-site links fetch the next page and swap the content between the navbar and the
+     footer, so the audio element (never in the page) keeps playing. Closing the bar returns
+     the site to normal navigation. */
   var nav = (function () {
-    var ctl = null;
-    var current = location.pathname + location.search;
-    var seenScripts = {};
-    var seenStyles = {};
+    var ctl = null, current = location.pathname + location.search, seenScripts = {}, seenStyles = {};
     var FILE = /\.(pdf|mp3|m4a|wav|zip|jpe?g|png|gif|svg|webp|avif|vtt|txt|csv|xml|rss|json|ics)$/i;
     var KEEP = '.announcement-bar, nav.navbar, [vci-nav="header"], footer.footer, footer';
-
-    function active() { return !!root && S.barShown && (S.mode === 'listen' || !!audioUrl); }
-    function remember() {
-      Array.prototype.forEach.call(d.body.querySelectorAll(':scope > script:not([src])'), function (sc) { seenScripts[sc.textContent] = true; });
-      Array.prototype.forEach.call(d.querySelectorAll('style'), function (st) { seenStyles[st.textContent] = true; });
-    }
-    function cloneScript(old) {
+    function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+    function active() { return S.mode === 'listen' && S.started && !S.dismissed; }
+    function clone(old) {
       var sc = d.createElement('script');
-      Array.prototype.forEach.call(old.attributes, function (a) { sc.setAttribute(a.name, a.value); });
+      each(old.attributes, function (a) { sc.setAttribute(a.name, a.value); });
       sc.textContent = old.textContent;
       return sc;
     }
-    function hasScript(src) {
-      return !!Array.prototype.some.call(d.scripts, function (x) { return x.src === src; });
-    }
+    function loaded(src) { return Array.prototype.some.call(d.scripts, function (x) { return x.src === src; }); }
     function onClick(e) {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-      if (!a || !active()) return;
-      if ((a.target && a.target !== '_self') || a.hasAttribute('download') || a.closest('[data-player-nav="off"]')) return;
-      if (root.contains(a)) return;
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !active()) return;
+      var a = e.target.closest && e.target.closest('a[href]');
+      if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download') || a.closest('[data-player-nav="off"]') || root.contains(a)) return;
       var url;
       try { url = new URL(a.href, location.href); } catch (x) { return; }
-      if (url.origin !== location.origin || !/^https?:$/.test(url.protocol)) return;
-      if (FILE.test(url.pathname)) return;
-      if (url.pathname === location.pathname && url.search === location.search) return; // same page or a hash
+      if (url.origin !== location.origin || FILE.test(url.pathname) || (url.pathname === location.pathname && url.search === location.search)) return;
       e.preventDefault();
-      leaveVideo();
       go(url.href, true);
     }
     function go(href, push) {
       if (ctl) ctl.abort();
-      var mine = ctl = ('AbortController' in w) ? new AbortController() : null;
+      var mine = ctl = 'AbortController' in w ? new AbortController() : null;
       d.documentElement.setAttribute('data-player-navigating', '');
       fetch(href, { credentials: 'same-origin', headers: { Accept: 'text/html' }, signal: mine && mine.signal })
-        .then(function (r) {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text().then(function (html) { return { html: html, url: r.url || href }; });
-        })
-        .then(function (res) {
-          if (mine !== ctl) return;
-          ctl = null;
-          swap(new DOMParser().parseFromString(res.html, 'text/html'), res.url, push);
-        })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text().then(function (h) { return { html: h, url: r.url || href }; }); })
+        .then(function (res) { if (mine !== ctl) return; ctl = null; swap(new DOMParser().parseFromString(res.html, 'text/html'), res.url, push); })
         .catch(function (err) {
           if (err && err.name === 'AbortError') return;
           d.documentElement.removeAttribute('data-player-navigating');
-          location.href = href; // the page the browser would have shown anyway
+          location.href = href;
         });
     }
     function swap(doc, url, push) {
       var oldWrap = $('.page-wrapper'), newWrap = doc.querySelector('.page-wrapper');
       if (!oldWrap || !newWrap) { location.href = url; return; }
-      savePosition(true);
-
+      savePos();
       if (push) history.pushState({ ctkPlayer: true }, '', url);
       current = location.pathname + location.search;
-
       d.title = doc.title;
-      ['meta[name="description"]', 'meta[property="og:title"]', 'meta[property="og:description"]', 'meta[property="og:image"]', 'meta[property="og:url"]', 'link[rel="canonical"]'].forEach(function (sel) {
+      ['meta[name="description"]', 'meta[property="og:title"]', 'meta[property="og:description"]', 'meta[property="og:image"]', 'link[rel="canonical"]'].forEach(function (sel) {
         var from = doc.querySelector(sel), to = $(sel);
-        if (from && to) { if (from.hasAttribute('content')) to.setAttribute('content', from.getAttribute('content')); if (from.hasAttribute('href')) to.setAttribute('href', from.getAttribute('href')); }
+        if (!from || !to) return;
+        if (from.hasAttribute('content')) to.setAttribute('content', from.getAttribute('content'));
+        if (from.hasAttribute('href')) to.setAttribute('href', from.getAttribute('href'));
       });
-      ['data-wf-page', 'data-wf-collection', 'data-wf-item-slug', 'data-wf-item-id'].forEach(function (name) {
-        var v = doc.documentElement.getAttribute(name);
-        if (v === null) d.documentElement.removeAttribute(name); else d.documentElement.setAttribute(name, v);
+      ['data-wf-page', 'data-wf-collection', 'data-wf-item-slug', 'data-wf-item-id'].forEach(function (n) {
+        var v = doc.documentElement.getAttribute(n);
+        if (v === null) d.documentElement.removeAttribute(n); else d.documentElement.setAttribute(n, v);
       });
       d.body.className = doc.body.className;
-      paint(); // puts the dock class back on the new body class
-
-      // Stylesheets and page-level styles the new page brings.
-      Array.prototype.forEach.call(doc.querySelectorAll('link[rel="stylesheet"]'), function (l) {
+      each(d.head.querySelectorAll('script[type="application/ld+json"]'), function (x) { x.parentNode.removeChild(x); });
+      each(doc.head.querySelectorAll('script[type="application/ld+json"]'), function (x) { d.head.appendChild(d.adoptNode(x)); });
+      each(doc.querySelectorAll('link[rel="stylesheet"]'), function (l) {
         if (!$('link[rel="stylesheet"][href="' + l.getAttribute('href') + '"]')) d.head.appendChild(d.adoptNode(l));
       });
-      Array.prototype.forEach.call(doc.querySelectorAll('head style, body > style'), function (st) {
+      each(doc.querySelectorAll('head style, body > style'), function (st) {
         if (seenStyles[st.textContent]) return;
         seenStyles[st.textContent] = true;
         d.head.appendChild(d.adoptNode(st));
       });
-
-      // Content: everything between the kept navbar and footer.
-      var footer = null;
-      Array.prototype.slice.call(oldWrap.children).forEach(function (c) {
-        if (c.matches(KEEP)) { if (c.matches('footer, footer.footer')) footer = c; return; }
+      var footer = null, scripts = [];
+      each(Array.prototype.slice.call(oldWrap.children), function (c) {
+        if (c.matches(KEEP)) { if (c.matches('footer')) footer = c; return; }
         oldWrap.removeChild(c);
       });
-      var scripts = [];
-      Array.prototype.slice.call(newWrap.children).forEach(function (c) {
+      each(Array.prototype.slice.call(newWrap.children), function (c) {
         if (c.matches(KEEP)) return;
         var node = d.adoptNode(c);
-        if (footer) oldWrap.insertBefore(node, footer); else oldWrap.appendChild(node);
-        Array.prototype.push.apply(scripts, node.querySelectorAll ? node.querySelectorAll('script') : []);
-        if (node.tagName === 'SCRIPT') scripts.push(node);
+        oldWrap.insertBefore(node, footer);
+        if (node.tagName === 'SCRIPT') scripts.push(node); else Array.prototype.push.apply(scripts, node.querySelectorAll('script'));
       });
-      // Scripts arriving by DOM insertion are inert; replace each with a live copy, in order.
+      // Scripts arriving by DOM insertion are inert: replace each with a live copy, in order.
       scripts.forEach(function (sc) {
-        if (sc.src && hasScript(sc.src)) { sc.parentNode.removeChild(sc); return; }
-        sc.parentNode.replaceChild(cloneScript(sc), sc);
+        if (sc.src && loaded(sc.src)) sc.parentNode.removeChild(sc); else sc.parentNode.replaceChild(clone(sc), sc);
       });
-      // The new page's own body-level code (page custom code), and the site's
-      // registered scripts that bind to elements at load.
-      Array.prototype.forEach.call(doc.body.querySelectorAll(':scope > script'), function (sc) {
+      each(doc.body.querySelectorAll(':scope > script'), function (sc) {
         if (sc.src) {
-          // Webflow ships a runtime bundle per page; running a second one on top of the first
-          // throws inside its module registry and kills the dropdowns. The loaded runtime is
-          // re-initialised below instead (Webflow.destroy / ready), which is what it offers.
-          if (/\/js\/webflow[.-]/.test(sc.src) || /jquery/.test(sc.src)) return;
-          if (/website-files\.com\/.*%2F.*\.js/.test(sc.src) && !/media-player/.test(sc.src)) {
-            // registered scripts re-run so they bind to the new content
-            d.body.appendChild(cloneScript(sc));
-          } else if (!hasScript(sc.src)) {
-            d.body.appendChild(cloneScript(sc));
-          }
+          // Webflow's runtime and jQuery are re-initialised below, never loaded twice.
+          if (/\/js\/webflow[.-]/.test(sc.src) || /jquery/.test(sc.src) || /media-player/.test(sc.src)) return;
+          if (/website-files\.com\/.*%2F.*\.js/.test(sc.src) || !loaded(sc.src)) d.body.appendChild(clone(sc));
           return;
         }
         if (seenScripts[sc.textContent]) return;
         seenScripts[sc.textContent] = true;
-        d.body.appendChild(cloneScript(sc));
+        d.body.appendChild(clone(sc));
       });
-
-      // Current-page marks on nav links.
-      Array.prototype.forEach.call(d.querySelectorAll('a.w--current'), function (a) { a.classList.remove('w--current'); a.removeAttribute('aria-current'); });
-      Array.prototype.forEach.call(d.querySelectorAll('nav a[href], footer a[href]'), function (a) {
-        var u; try { u = new URL(a.href, location.href); } catch (x) { return; }
-        if (u.origin === location.origin && u.pathname === location.pathname) { a.classList.add('w--current'); a.setAttribute('aria-current', 'page'); }
+      each(d.querySelectorAll('a.w--current'), function (a) { a.classList.remove('w--current'); a.removeAttribute('aria-current'); });
+      each(d.querySelectorAll('nav a[href], footer a[href]'), function (a) {
+        if (a.pathname === location.pathname && a.origin === location.origin) { a.classList.add('w--current'); a.setAttribute('aria-current', 'page'); }
       });
-
-      // Libraries that scan the page at load.
-      try {
-        var W = w.Webflow;
-        if (W && W.destroy && W.ready) { W.destroy(); W.ready(); var ix = W.require && W.require('ix2'); if (ix && ix.init) ix.init(); }
-      } catch (e) { /* Webflow runtime changed */ }
+      try { var W = w.Webflow; if (W && W.destroy && W.ready) { W.destroy(); W.ready(); var ix = W.require && W.require('ix2'); if (ix && ix.init) ix.init(); } } catch (e) { /* runtime changed */ }
       try {
         var fa = w.FinsweetAttributes;
         if (fa && fa.modules) {
           for (var k in fa.modules) { if (fa.modules[k] && typeof fa.modules[k].restart === 'function') fa.modules[k].restart(); }
           if (typeof fa.load === 'function' && $('[fs-list-element]') && !fa.modules.list) fa.load('list');
         }
-      } catch (e) { /* Finsweet runtime changed */ }
-      try {
-        var v = w.vci;
-        if (v && v.accordion && v.accordion.init) v.accordion.init();
-        if (v && v.nav && v.nav.measure) v.nav.measure();
-      } catch (e) { /* narthex changed */ }
-
-      // Scroll like a new page would, then hand focus to the heading.
-      var hash = location.hash && $(location.hash);
-      if (hash) hash.scrollIntoView(); else w.scrollTo(0, 0);
+      } catch (e) { /* Finsweet changed */ }
+      try { var v = w.vci; if (v && v.accordion && v.accordion.init) v.accordion.init(); if (v && v.nav && v.nav.measure) v.nav.measure(); } catch (e) { /* narthex changed */ }
+      var target = location.hash && $(location.hash);
+      if (target) target.scrollIntoView(); else w.scrollTo(0, 0);
       var h1 = $('.page-wrapper h1');
       if (h1) { if (!h1.hasAttribute('tabindex')) h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); }
-
       adopt();
       d.documentElement.removeAttribute('data-player-navigating');
       emit('navigate', { url: url });
     }
     function onPop() {
-      var here = location.pathname + location.search;
-      if (here === current) return; // a hash change
-      if (active()) go(location.href, false);
-      else location.reload();
+      if (location.pathname + location.search === current) return;
+      if (active()) go(location.href, false); else location.reload();
     }
     function start() {
-      remember();
+      each(d.body.querySelectorAll(':scope > script:not([src])'), function (sc) { seenScripts[sc.textContent] = true; });
+      each(d.querySelectorAll('style'), function (st) { seenStyles[st.textContent] = true; });
       d.addEventListener('click', onClick);
       w.addEventListener('popstate', onPop);
     }
-    return { go: go, start: start, active: active };
+    return { go: go, start: start };
   })();
 
-  /* ---------- init ---------- */
-  var booted = false;
-  // The Media Template carries a static copy of the bar ([data-player-mockup]) so its classes
-  // can be styled on the Designer canvas. It is never part of the live page: drop it before
-  // the real bar is built, and again after every in-place swap brings a fresh copy in.
-  function dropMockups() {
-    var m = d.querySelectorAll('[data-player-mockup]');
-    for (var i = 0; i < m.length; i++) m[i].parentNode.removeChild(m[i]);
-  }
-
+  /* ---------- start ---------- */
+  function dropMockups() { Array.prototype.forEach.call(d.querySelectorAll('[data-player-mockup]'), function (m) { m.parentNode.removeChild(m); }); }
   function init() {
-    if (booted) return true;
+    var el = findStage();
+    if (!el || root) return !!root;
     dropMockups();
-    var el = $('[data-player="stage"]') || $('[data-youtube-id]') || $('.video-embed[data-video]');
-    if (!el) return false;
-    booted = true;
     css();
     build();
-    watchPage();
-    watchVisibility();
     nav.start();
-    w.addEventListener('pagehide', function () { savePosition(true); });
+    ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { d.addEventListener(ev, unlock, { capture: true, passive: true }); });
+    w.addEventListener('pagehide', savePos);
+    if (mobile.addEventListener) mobile.addEventListener('change', place); else if (mobile.addListener) mobile.addListener(place);
     mount(el);
     return true;
   }
-
-  // The footer script runs after the page's markup has been parsed, so the
-  // stage is normally there already; starting now (not at DOMContentLoaded)
-  // means the transcript embed, whose own DOMContentLoaded handler was
-  // registered first, finds a player that already knows its sources.
   if (!init() && d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init);
 })();
