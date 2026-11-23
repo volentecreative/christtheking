@@ -10,6 +10,8 @@
  *         (.is-visible) once the audio has played and the stage is off screen. Same-site links
  *         then load in place so the audio carries on; when it ends, the next part in the
  *         series ([data-series-next]) loads and plays.
+ * Drawer  on phones, tapping the bar while listening opens a sheet (.media-drawer) with the
+ *         thumbnail, a large scrubber and 15-second skips.
  * Mode    cookie ctk-playback-mode (watch|listen), written only by a tap on the switch.
  * Mobile  ≤991px (the site's tablet breakpoint, as the transcript sheet): a playing video that
  *         scrolls fully off screen hands over to the audio once. If the browser blocks audio
@@ -30,6 +32,8 @@
   var ICON = {
     play: 'M320-200v-560l440 280-440 280Z',
     pause: 'M560-200v-560h160v560H560Zm-320 0v-560h160v560H240Z',
+    replay: 'M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440h80q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l62 62-56 58-160-160 160-160 56 58-62 62h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80Z',
+    down: 'M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z',
     close: 'm256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z',
     listen: 'M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z'
   };
@@ -47,7 +51,7 @@
     pendingSeek: null, // audio seconds to apply once metadata loads
     resumed: false, autoplay: false, lastTime: 0
   };
-  var stage = null, modes = null, root, bar, els = {}, audio = null, io = null;
+  var stage = null, modes = null, root, bar, els = {}, audio = null, io = null, drawer = null, dr = {};
   var yt = null, ytReady = false, ytQueue = [], iframe = null, poster = null;
 
   function $(sel, r) { return (r || d).querySelector(sel); }
@@ -230,7 +234,7 @@
     S.mode = mode;
     if (stage) stage.setAttribute('data-player-mode', mode);
     if (mode === 'listen') { S.holdVideo = 0; if (ytPlaying()) yt.pauseVideo(); }
-    else if (audio && !audio.paused) audio.pause();
+    else { if (audio && !audio.paused) audio.pause(); closeDrawer(); }
     if (modes) Array.prototype.forEach.call(modes.querySelectorAll('[data-player-mode]'), function (b) {
       var on = b.getAttribute('data-player-mode') === mode;
       b.classList.toggle('is-active', on);
@@ -329,9 +333,97 @@
     els.cont.addEventListener('keydown', key(cont));
     els.close.addEventListener('click', function (e) { e.preventDefault(); close(); });
     els.close.addEventListener('keydown', key(close));
-    els.info.addEventListener('click', function (e) { if (!els.progress.contains(e.target)) back(); });
-    els.info.addEventListener('keydown', function (e) { if (e.target === els.info) key(back)(e); });
-    scrubbing();
+    function open() { if (mobile.matches && S.mode === 'listen') openDrawer(); else back(); }
+    els.info.addEventListener('click', function (e) { if (!els.progress.contains(e.target)) open(); });
+    els.info.addEventListener('keydown', function (e) { if (e.target === els.info) key(open)(e); });
+    scrubbing(els.progress, els.progress);
+    buildDrawer(back);
+  }
+
+  /* ---------- the drawer (phones) ---------- */
+  function buildDrawer(back) {
+    drawer = el('div', 'media-drawer', { 'data-player': 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Audio player' });
+    var scrim = el('div', 'media-drawer_scrim');
+    var panel = el('div', 'media-drawer_panel');
+    dr.art = el('img', 'media-drawer_art', { alt: '' });
+    var head = el('div', 'media-drawer_head'), text = el('div', 'media-drawer_text');
+    dr.title = el('div', 'text-style-title-small media-player_title');
+    dr.artist = el('div', 'text-style-media-meta');
+    dr.close = el('button', 'media-player_btn', { type: 'button', 'aria-label': 'Close' });
+    dr.close.innerHTML = svg(ICON.down);
+    text.appendChild(dr.title); text.appendChild(dr.artist);
+    head.appendChild(text); head.appendChild(dr.close);
+    dr.scrub = el('div', 'media-drawer_scrub', { role: 'slider', tabindex: '0', 'aria-label': 'Position', 'aria-valuemin': '0' });
+    var track = el('div', 'media-drawer_track');
+    track.appendChild(el('div', 'media-drawer_fill')); track.appendChild(el('div', 'media-drawer_thumb'));
+    dr.scrub.appendChild(track);
+    var times = el('div', 'media-drawer_times');
+    dr.elapsed = el('div', 'text-style-media-meta'); dr.left = el('div', 'text-style-media-meta');
+    times.appendChild(dr.elapsed); times.appendChild(dr.left);
+    var controls = el('div', 'media-drawer_controls');
+    function skip(sec) {
+      var b = el('button', 'media-player_btn is-skip', { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds' });
+      b.innerHTML = svg(ICON.replay, sec > 0 ? 'is-forward' : '') + '<span class="media-drawer_skip-label" aria-hidden="true">' + Math.abs(sec) + '</span>';
+      b.addEventListener('click', function () { api.seek(api.getTime() + sec); });
+      return b;
+    }
+    dr.play = el('button', 'media-player_btn is-play is-large', { type: 'button' });
+    dr.play.innerHTML = svg(ICON.play);
+    dr.playPath = dr.play.querySelector('path');
+    dr.play.addEventListener('click', function () { api.toggle(); });
+    controls.appendChild(skip(-15)); controls.appendChild(dr.play); controls.appendChild(skip(15));
+    [el('div', 'media-drawer_grab', { 'aria-hidden': 'true' }), dr.art, head, dr.scrub, times, controls].forEach(function (n) { panel.appendChild(n); });
+    drawer.appendChild(scrim); drawer.appendChild(panel);
+    drawer.inert = true;
+    root.appendChild(drawer);
+
+    scrim.addEventListener('click', closeDrawer);
+    dr.close.addEventListener('click', closeDrawer);
+    dr.art.addEventListener('click', function () { if (!dragged) { closeDrawer(); back(); } });
+    drawer.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
+    scrubbing(dr.scrub, dr.scrub.firstChild);
+    // Drag the sheet down to close it.
+    var y0 = null, dy = 0, dragged = false;
+    panel.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('button, [role="slider"]')) return;
+      y0 = e.clientY; dy = 0; dragged = false;
+    });
+    panel.addEventListener('pointermove', function (e) {
+      if (y0 === null) return;
+      dy = Math.max(0, e.clientY - y0);
+      if (dy > 4 && !dragged) { dragged = true; drawer.classList.add('is-dragging'); if (panel.setPointerCapture) panel.setPointerCapture(e.pointerId); }
+      drawer.style.setProperty('--drawer-drag', dy + 'px');
+    });
+    function release() {
+      if (y0 === null) return;
+      y0 = null;
+      drawer.classList.remove('is-dragging');
+      drawer.style.removeProperty('--drawer-drag');
+      if (dy > 80) closeDrawer();
+      setTimeout(function () { dragged = false; }, 0);
+    }
+    panel.addEventListener('pointerup', release);
+    panel.addEventListener('pointercancel', release);
+  }
+  var lastFocus = null;
+  function openDrawer() {
+    if (drawer.classList.contains('is-visible')) return;
+    lastFocus = d.activeElement;
+    var src = poster ? poster.currentSrc || poster.src : S.artwork;
+    dr.art.style.display = src ? '' : 'none';
+    if (src && dr.art.getAttribute('src') !== src) dr.art.src = src;
+    drawer.inert = false;
+    drawer.classList.add('is-visible');
+    d.documentElement.classList.add('has-player-drawer');
+    paint();
+    dr.play.focus({ preventScroll: true });
+  }
+  function closeDrawer() {
+    if (!drawer || !drawer.classList.contains('is-visible')) return;
+    drawer.classList.remove('is-visible');
+    drawer.inert = true;
+    d.documentElement.classList.remove('has-player-drawer');
+    if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
   }
   // Inline in the stage while listening and the stage is on screen; docked when it is not
   // (or on another page) once the audio has played; docked with Continue listening after
@@ -358,23 +450,34 @@
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     els.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
     els.title.textContent = S.title;
-    els.info.setAttribute('aria-label', S.title + ' — back to the sermon');
+    els.info.setAttribute('aria-label', S.title + (mobile.matches && S.mode === 'listen' ? ' — open player' : ' — back to the sermon'));
     var dur = S.mode === 'listen' ? api.getDuration() : 0;
     var t = scrubAt === null ? api.getTime() : scrubAt * dur;
     els.elapsed.textContent = fmt(t);
     els.elapsed.style.minWidth = dur ? fmt(dur).length + 'ch' : '';
     els.duration.textContent = dur ? fmt(dur) : '';
-    els.progress.style.setProperty('--player-progress', (dur ? clamp(t / dur, 0, 1) * 100 : 0).toFixed(2) + '%');
-    els.progress.setAttribute('aria-valuemax', String(Math.round(dur)));
-    els.progress.setAttribute('aria-valuenow', String(Math.round(t)));
-    els.progress.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
+    var pct = (dur ? clamp(t / dur, 0, 1) * 100 : 0).toFixed(2) + '%';
+    [els.progress, dr.scrub].forEach(function (pr) {
+      pr.style.setProperty('--player-progress', pct);
+      pr.setAttribute('aria-valuemax', String(Math.round(dur)));
+      pr.setAttribute('aria-valuenow', String(Math.round(t)));
+      pr.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
+    });
+    if (!drawer.classList.contains('is-visible')) return;
+    dr.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    dr.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
+    dr.title.textContent = S.title;
+    dr.artist.textContent = S.artist;
+    dr.elapsed.textContent = fmt(t);
+    dr.left.textContent = dur ? '-' + fmt(dur - t) : '';
   }
-  function scrubbing() {
-    var pr = els.progress;
-    function at(e) { var r = pr.getBoundingClientRect(); return r.width ? clamp((e.clientX - r.left) / r.width, 0, 1) : 0; }
+  // pr takes the pointer and keys; the position is measured along track.
+  function scrubbing(pr, track) {
+    function at(e) { var r = track.getBoundingClientRect(); return r.width ? clamp((e.clientX - r.left) / r.width, 0, 1) : 0; }
     pr.addEventListener('pointerdown', function (e) {
       if (!api.getDuration()) return;
       scrubAt = at(e);
+      pr.classList.add('is-scrubbing');
       if (pr.setPointerCapture) pr.setPointerCapture(e.pointerId);
       paint(); e.preventDefault();
     });
@@ -382,9 +485,10 @@
     pr.addEventListener('pointerup', function () {
       if (scrubAt === null) return;
       var f = scrubAt; scrubAt = null;
+      pr.classList.remove('is-scrubbing');
       api.seek(f * api.getDuration());
     });
-    pr.addEventListener('pointercancel', function () { scrubAt = null; paint(); });
+    pr.addEventListener('pointercancel', function () { scrubAt = null; pr.classList.remove('is-scrubbing'); paint(); });
     pr.addEventListener('keydown', function (e) {
       var dur = api.getDuration(), t = api.getTime(), step = e.shiftKey ? 30 : 5;
       if (!dur) return;
@@ -416,6 +520,19 @@
       '.media-player_progress > .media-player_progress-fill{position:absolute;left:0;top:50%;transform:translateY(-50%);width:var(--player-progress,0%);flex:none;margin:0}',
       '.media-player_progress:hover .media-player_progress-fill,.media-player_progress:focus-visible .media-player_progress-fill{height:5px}',
       'html[data-player-navigating] .page-wrapper{cursor:progress}',
+      '.media-drawer{transition:visibility 0s linear .32s}',
+      '.media-drawer.is-visible{visibility:visible;pointer-events:auto;transition:none}',
+      '.media-drawer_scrim{transition:opacity .32s ease}',
+      '.media-drawer.is-visible .media-drawer_scrim{opacity:.7}',
+      '.media-drawer_panel{transform:translateY(100%);transition:transform .32s cubic-bezier(.22,1,.36,1);touch-action:none}',
+      '.media-drawer.is-visible .media-drawer_panel{transform:translateY(var(--drawer-drag,0px))}',
+      '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
+      'html.has-player-drawer{overflow:hidden}',
+      '.media-drawer_scrub{touch-action:none}',
+      '.media-drawer_fill{width:var(--player-progress,0%)}',
+      '.media-drawer_thumb{left:var(--player-progress,0%);transform:translate(-50%,-50%);transition:transform .15s ease}',
+      '.media-drawer_scrub.is-scrubbing .media-drawer_thumb,.media-drawer_scrub:focus-visible .media-drawer_thumb{transform:translate(-50%,-50%) scale(1.3)}',
+      '.media-drawer svg.is-forward{transform:scaleX(-1)}',
       // Nothing at the bottom of the page sits under the docked bar.
       'body.has-player-dock .page-wrapper{padding-bottom:var(--player-dock-height,0px)}',
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
