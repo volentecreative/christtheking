@@ -262,6 +262,7 @@
   }
   // how: 'user' (the switch: remembered) · 'continue' (the blocked hand-off) · anything else.
   function setMode(mode, how) {
+    if (standby) { if (how === 'user') { saveMode(mode); mark(mode); } return; }
     if (!has(mode)) return;
     if (how === 'user') saveMode(mode);
     if (mode === S.mode) return;
@@ -624,7 +625,7 @@
       '.video-embed > [data-player="overlay"]{transition:opacity .35s ease,visibility .35s}',
       '.video-embed:not([data-player-mode="listen"]) > [data-player="overlay"]{opacity:0;visibility:hidden}',
       '.video-embed[data-player-mode="listen"] > iframe{opacity:0;visibility:hidden;pointer-events:none}',
-      '.video-embed[data-player-mode="listen"] > [data-player="poster"]{filter:brightness(.3)}',
+      '.video-embed[data-player-mode="listen"] > [data-player="poster"],.video-embed[data-player-mode="standby"] > [data-player="poster"]{filter:brightness(.3)}',
       'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
       '.media-player_bar[data-state="blocked"] [data-player="expand"]{display:none}',
       '.media-player_bar:not([data-state="blocked"]) [data-player="close"]{display:none}',
@@ -728,6 +729,7 @@
     },
     toggle: function () { if (api.isPlaying()) api.pause(); else api.play(); },
     seek: function (s, opts) {
+      if (standby) { take(function () { api.seek(s, { play: true }); }); return; } // a transcript time plays this sermon
       s = Math.max(0, Number(s) || 0);
       var play = opts && opts.play;
       S.resumed = true;
@@ -821,16 +823,62 @@
   // After an in-place swap: the same sermon re-anchors, another one loads, no stage docks the bar.
   function adopt() {
     dropMockups(); // every page brings the Designer mockup again
+    standby = null;
     var el = findStage();
     if (!el) { stage = null; observe(); place(); return; }
     var src = read(el);
     if (!S.autoplay && src.videoId === S.videoId && src.audioUrl === S.audioUrl) {
       use(el); S.href = location.pathname + location.search;
+      api.hasVideo = !!S.videoId; api.hasAudio = !!S.audioUrl;
       wireModes(); observe(); show(S.mode);
       return;
     }
+    // Another sermon while one is still in the bar: it waits until it is actually played.
+    if (!S.autoplay && S.mode === 'listen' && S.started && !S.dismissed) { wait(el, src); return; }
     savePos();
     mount(el);
+  }
+
+  // Another sermon's stage while the current one keeps playing in the bar: its thumbnail and a
+  // play button. Playing it (the button, a transcript time, the Listen/Watch choice then play)
+  // is what hands the player over to it; until then the bar keeps the sermon it has.
+  var standby = null;
+  function wait(node, src) {
+    standby = node; stage = null;
+    api.hasVideo = api.hasAudio = false; // the transcript reads no time from the other sermon
+    node.setAttribute('data-player-mode', 'standby');
+    if (src.videoId) node.insertBefore(el('img', null, { 'data-player': 'poster', 'data-player-standby': '', alt: '', src: 'https://i.ytimg.com/vi/' + encodeURIComponent(src.videoId) + '/hqdefault.jpg' }), node.firstChild);
+    var ov = el('div', 'media-player_overlay', { 'data-player-standby': '' });
+    var row = el('div', 'media-controls_buttons is-overlay');
+    var go = el('button', 'media-player_btn is-play is-large', { type: 'button', 'aria-label': 'Play this sermon', 'vci-tooltip': '' });
+    go.innerHTML = svg(ICON.play);
+    go.addEventListener('click', function () { take(function () { api.play(); }); });
+    row.appendChild(go); ov.appendChild(row); node.appendChild(ov);
+    wireModes();
+    if (modes) {
+      modes.style.display = src.videoId && src.audioUrl ? '' : 'none';
+      mark(savedMode() || 'watch');
+    }
+    observe(); place();
+  }
+  // The Watch/Listen switch while waiting only picks how it will play.
+  function mark(mode) {
+    Array.prototype.forEach.call(modes.querySelectorAll('[data-player-mode]'), function (b) {
+      var on = b.getAttribute('data-player-mode') === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+  }
+  function take(then) {
+    var node = standby;
+    if (!node) return;
+    standby = null;
+    Array.prototype.forEach.call(node.querySelectorAll('[data-player-standby]'), function (n) { n.parentNode.removeChild(n); });
+    node.removeAttribute('data-player-mode');
+    savePos();
+    mount(node);
+    if (then) then();
   }
 
   /* ---------- in-place navigation while the audio plays ----------
