@@ -2,10 +2,11 @@
  *
  * Stage   .video-embed[data-video] on the Media Template: data-youtube-id, data-audio-url,
  *         optional data-audio-offset (seconds the MP3 runs ahead of the video).
- * Switch  [data-player-modes] > [data-player-mode="watch|listen"] above the stage (Designer).
+ * Switch  [data-player-modes] > [data-player-mode="watch|listen"] below the stage (Designer).
  *         Shown only when both sources exist; the chosen one gets .is-active.
  * Watch   the YouTube embed, created in the stage on first use.
- * Listen  the bar (media-player_bar) sits in the stage (.is-inline) and docks to the bottom
+ * Listen  the stage keeps its 16:9 size: the video fades to its thumbnail and the bar
+ *         (media-player_bar) sits over it (.is-inline). It docks to the bottom
  *         (.is-visible) once the audio has played and the stage is off screen. Same-site links
  *         then load in place so the audio carries on; when it ends, the next part in the
  *         series ([data-series-next]) loads and plays.
@@ -42,12 +43,12 @@
     onStage: true,     // any of the stage is on screen
     handoff: 'idle',   // idle · trying · blocked (Continue listening shown) · spent · done
     unlocked: false, unlocking: false,
-    holdVideo: false,  // pause the next PLAYING (seekTo starts an unstarted player)
+    holdVideo: 0,      // until this time, pause a PLAYING (seekTo starts an unstarted player)
     pendingSeek: null, // audio seconds to apply once metadata loads
     resumed: false, autoplay: false, lastTime: 0
   };
   var stage = null, modes = null, root, bar, els = {}, audio = null, io = null;
-  var yt = null, ytReady = false, ytQueue = [], iframe = null;
+  var yt = null, ytReady = false, ytQueue = [], iframe = null, poster = null;
 
   function $(sel, r) { return (r || d).querySelector(sel); }
   function el(tag, cls, attrs) {
@@ -157,7 +158,7 @@
     }
     if (p && p.then) p.then(function () { done(true); }, function () { done(false); });
   }
-  function cancelUnlock() { if (S.unlocking) { S.unlocking = false; audio.muted = false; } }
+  function cancelUnlock() { if (S.unlocking) { S.unlocking = false; audio.pause(); audio.muted = false; } }
 
   /* ---------- video ---------- */
   function ytPlaying() {
@@ -182,7 +183,7 @@
       allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share',
       referrerpolicy: 'strict-origin-when-cross-origin'
     });
-    stage.insertBefore(iframe, stage.firstChild);
+    stage.insertBefore(iframe, poster ? poster.nextSibling : stage.firstChild);
     var mine = iframe;
     youtubeAPI(function () {
       if (mine !== iframe) return; // replaced by another sermon meanwhile
@@ -200,7 +201,7 @@
   }
   function onVideo(e) {
     if (e.data === YT_PLAYING) {
-      if (S.holdVideo) { S.holdVideo = false; yt.pauseVideo(); return; }
+      if (S.holdVideo > Date.now()) { S.holdVideo = 0; yt.pauseVideo(); return; }
       if (S.mode !== 'watch') { yt.pauseVideo(); return; }
       S.played = true;
       if (audio && !audio.paused && S.handoff !== 'trying') audio.pause();
@@ -217,9 +218,9 @@
   function seekVideo(t, play) {
     withVideo(function () {
       var s = yt.getPlayerState ? yt.getPlayerState() : -1;
-      S.holdVideo = !play && (s === -1 || s === 5); // unstarted or cued
+      S.holdVideo = !play && (s === -1 || s === 5) ? Date.now() + 2000 : 0; // unstarted or cued
       yt.seekTo(Math.min(t, ytDuration() ? ytDuration() - 1 : t), true);
-      if (play) { S.holdVideo = false; yt.playVideo(); }
+      if (play) yt.playVideo();
     });
   }
 
@@ -227,9 +228,8 @@
   function has(mode) { return mode === 'listen' ? !!S.audioUrl : !!S.videoId; }
   function show(mode) {
     S.mode = mode;
-    d.documentElement.setAttribute('data-playback-mode', mode);
     if (stage) stage.setAttribute('data-player-mode', mode);
-    if (mode === 'listen') { S.holdVideo = false; if (ytPlaying()) yt.pauseVideo(); }
+    if (mode === 'listen') { S.holdVideo = 0; if (ytPlaying()) yt.pauseVideo(); }
     else if (audio && !audio.paused) audio.pause();
     if (modes) Array.prototype.forEach.call(modes.querySelectorAll('[data-player-mode]'), function (b) {
       var on = b.getAttribute('data-player-mode') === mode;
@@ -245,7 +245,8 @@
     if (how === 'user') saveMode(mode);
     if (mode === S.mode) return;
     var t = api.getTime(), playing = api.isPlaying();
-    S.handoff = how === 'continue' ? 'done' : 'idle';
+    // A hand-off happens once per sermon; choosing Watch again also ends it.
+    S.handoff = how === 'continue' || mode === 'watch' ? 'done' : 'idle';
     if (mode === 'listen') {
       cancelUnlock();
       seekAudio(t);
@@ -268,8 +269,8 @@
     (p && p.then ? p : Promise.resolve()).then(function () {
       if (S.handoff !== 'trying') return;
       S.handoff = 'done';
-      if (yt.unMute) yt.unMute();
       show('listen');
+      if (yt.unMute) yt.unMute();
       emit('mode', { auto: true });
     }, function () {
       if (S.handoff !== 'trying') return;
@@ -400,9 +401,13 @@
     var s = el('style', null, { 'data-player-style': '' });
     s.textContent = [
       '.media-player{display:contents}',
-      '.video-embed > iframe{display:block;width:100%;height:100%;border:0}',
-      '.video-embed[data-player-mode="listen"]{aspect-ratio:auto;min-height:0}',
-      '.video-embed[data-player-mode="listen"] > iframe{display:none}',
+      '.video-embed > iframe,.video-embed > [data-player="poster"]{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;transition:opacity .35s ease,visibility .35s,filter .35s ease}',
+      '.video-embed > [data-player="poster"]{object-fit:cover;cursor:pointer}',
+      '.video-embed[data-player-mode="listen"] > iframe{opacity:0;visibility:hidden;pointer-events:none}',
+      '.video-embed[data-player-mode="listen"] > [data-player="poster"]{filter:brightness(.45)}',
+      '.video-embed[data-player-mode="listen"]:not(:has(> [data-player="poster"])){aspect-ratio:auto}',
+      '.media-player_bar.is-inline{animation:ctk-player-in .35s ease both}',
+      '@keyframes ctk-player-in{from{opacity:0;transform:translateY(.5rem)}}',
       'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
       '.media-player_bar.is-inline [data-player="close"]{display:none}',
       '.media-player_bar:not([data-state="blocked"]) [data-player="continue"],.media-player_bar[data-state="blocked"] [data-player="play"],.media-player_bar[data-state="blocked"] .media-player_time{display:none}',
@@ -467,7 +472,7 @@
         var t = resumeAt();
         if (t) seekAudio(t);
         startAudio();
-      } else withVideo(function () { S.holdVideo = false; yt.playVideo(); });
+      } else withVideo(function () { S.holdVideo = 0; yt.playVideo(); });
     },
     pause: function () {
       if (S.mode === 'listen') { if (audio) audio.pause(); } else if (ytReady) yt.pauseVideo();
@@ -532,15 +537,23 @@
     S.artist = Array.prototype.map.call(d.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) { return n.textContent.trim(); }).filter(Boolean).join(', ');
     S.artwork = S.videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/hqdefault.jpg' : null;
   }
+  // A (new) stage element: the thumbnail behind the video, which is created on first use.
+  function use(node) {
+    stage = node; iframe = null; poster = null; yt = null; ytReady = false; ytQueue = [];
+    if (!S.videoId) return;
+    poster = node.insertBefore(el('img', null, { 'data-player': 'poster', alt: '', src: 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/maxresdefault.jpg' }), node.firstChild);
+    poster.onload = function () { if (this.naturalWidth <= 120) { this.onload = null; this.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/hqdefault.jpg'; } }; // no HD thumbnail
+    poster.addEventListener('click', function () { api.toggle(); });
+  }
   // Load the sermon on this page (first load, or another sermon reached in place).
   function mount(el) {
     var src = read(el);
     if (audio) { cancelUnlock(); audio.pause(); }
-    stage = el; iframe = null; yt = null; ytReady = false; ytQueue = [];
     S.videoId = src.videoId; S.audioUrl = src.audioUrl; S.offset = src.offset;
+    use(el);
     S.slug = location.pathname.replace(/\/+$/, '').split('/').pop();
     S.href = location.pathname + location.search;
-    S.played = S.started = false; S.dismissed = false; S.handoff = 'idle'; S.holdVideo = false;
+    S.played = S.started = false; S.dismissed = false; S.handoff = 'idle'; S.holdVideo = 0;
     S.pendingSeek = null; S.resumed = false; S.lastTime = 0;
     api.hasVideo = !!S.videoId; api.hasAudio = !!S.audioUrl;
     readPage();
@@ -560,7 +573,7 @@
     if (!el) { stage = null; observe(); place(); return; }
     var src = read(el);
     if (!S.autoplay && src.videoId === S.videoId && src.audioUrl === S.audioUrl) {
-      stage = el; S.href = location.pathname + location.search;
+      use(el); S.href = location.pathname + location.search;
       wireModes(); observe(); show(S.mode);
       return;
     }
