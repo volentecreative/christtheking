@@ -35,7 +35,7 @@ needs both.
 
 ```
                 ┌───────────────────────── normal path ─────────────────────────┐
-ATEM Mini ──RTMPS/SRT──▶ Cloudflare Stream live input ──simulcast──▶ YouTube (unlisted)
+ATEM SDI Pro ISO ──SRT──▶ Cloudflare Stream live input ──simulcast──▶ YouTube (unlisted)
    │                         │                                         │
    │ USB recording           │ recording ready (webhook)               │ Data API
    ▼ (local backup)          ▼                                         ▼
@@ -106,8 +106,13 @@ register resolver 2.5.0 in Webflow in place of 2.4.0 and publish.
 
 **Open questions**
 
-- ATEM model and firmware: needed to confirm it can stream to Cloudflare
-  (RTMPS or SRT) and to write the switch-over steps.
+- ~~ATEM model~~: **ATEM SDI Pro ISO** (confirmed 2026-11-23). Blackmagic's
+  9.5 switcher update added SRT streaming to it, and Cloudflare Stream accepts
+  SRT, so it can feed Cloudflare directly. Update both the switcher firmware and
+  ATEM Software Control to the latest 9.x (some guides say 9.6+ for SRT) and
+  check the installed version before the first test. Being an ISO model, its
+  USB recording also keeps each camera input as a separate file, which helps
+  if a sermon ever needs re-editing from the raw angles.
 - Which Drive folder (and which Google account owns it).
 - Does Cloudflare's download link for large recordings stream cleanly through a
   Worker into Drive within Worker limits? Prototype this first; if not, use a
@@ -230,7 +235,7 @@ same stream key at once. The switch-over is either/or.
 | Deploy the Worker (`npx wrangler deploy`), set secrets | Someone with the CTK Cloudflare login | 0+ |
 | Register resolver 2.5.0 in Webflow and publish | Josh (or Claude via the Webflow connection) | 0 |
 | Turn on Auto-stop in YouTube Studio | Media team | 0 |
-| ATEM model + firmware version | Media team | 1 |
+| Update ATEM SDI Pro ISO firmware + ATEM Software Control to latest 9.x (SRT needs 9.5+) | Media team | 1 |
 | Turn on Cloudflare Stream (about $5/month) | CTK Cloudflare account owner | 1 |
 | YouTube stream key into the Cloudflare live output | Media team | 1 |
 | ATEM: save the Cloudflare destination and keep YouTube direct as a second one; USB recording on | Media team | 1 |
