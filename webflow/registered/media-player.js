@@ -40,7 +40,7 @@
 
   var S = {
     mode: 'watch', videoId: null, audioUrl: null, offset: 0,
-    title: '', artist: '', artwork: null, slug: '',
+    title: '', artist: '', artwork: null, slug: '', known: 0, // known: CMS duration (s)
     played: false,     // either source has played on this sermon
     started: false,    // the audio has played on this sermon: the bar may dock
     dismissed: false,  // the docked bar was closed
@@ -119,7 +119,7 @@
       });
       audio.addEventListener('ended', ended);
       ['loadedmetadata', 'canplay', 'playing', 'seeked'].forEach(function (ev) { audio.addEventListener(ev, applySeek); });
-      audio.addEventListener('loadedmetadata', paint);
+      ['loadedmetadata', 'durationchange'].forEach(function (ev) { audio.addEventListener(ev, paint); });
       audio.addEventListener('timeupdate', function () {
         applySeek();
         if (S.mode !== 'listen') return;
@@ -131,8 +131,8 @@
     return audio;
   }
   function clampAudio(x) {
-    var dur = audio && audio.duration;
-    return dur > 1 && isFinite(dur) ? clamp(x, 0, dur - 1) : Math.max(0, x);
+    var dur = Math.max(audio && isFinite(audio.duration) ? audio.duration : 0, S.known + S.offset);
+    return dur > 1 ? clamp(x, 0, dur - 1) : Math.max(0, x);
   }
   // Seek on the video's clock. iOS can drop a seek made before playback starts, so it stays
   // pending (and is re-applied) until playing audio has reached it.
@@ -607,8 +607,9 @@
     } catch (e) { /* no media session */ }
   }
   function positionState() {
-    if (!navigator.mediaSession || !navigator.mediaSession.setPositionState || !(audio.duration > 0) || !isFinite(audio.duration)) return;
-    try { navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate, position: clamp(audio.currentTime, 0, audio.duration) }); } catch (e) { /* out of range */ }
+    var dur = api.getDuration() + S.offset;
+    if (!navigator.mediaSession || !navigator.mediaSession.setPositionState || !(dur > 0)) return;
+    try { navigator.mediaSession.setPositionState({ duration: dur, playbackRate: audio.playbackRate, position: clamp(audio.currentTime, 0, dur) }); } catch (e) { /* out of range */ }
   }
 
   /* ---------- API ---------- */
@@ -621,9 +622,11 @@
       if (S.pendingSeek !== null) return Math.max(0, S.pendingSeek - S.offset);
       return audio ? Math.max(0, audio.currentTime - S.offset) : S.lastTime;
     },
+    // iOS can briefly report a short duration after a seek into unloaded audio, so the
+    // length is never less than what YouTube or the CMS (the page's JSON-LD) says.
     getDuration: function () {
-      if (S.mode === 'listen' && audio && audio.duration > 1 && isFinite(audio.duration)) return Math.max(0, audio.duration - S.offset);
-      return ytDuration();
+      var a = S.mode === 'listen' && audio && audio.duration > 1 && isFinite(audio.duration) ? audio.duration - S.offset : 0;
+      return Math.max(a, ytDuration(), S.known);
     },
     isPlaying: function () { return S.mode === 'listen' ? !!audio && !audio.paused && !S.unlocking : ytPlaying(); },
     play: function () {
@@ -696,6 +699,8 @@
     S.title = h1 ? h1.textContent.trim() : d.title;
     S.artist = Array.prototype.map.call(d.querySelectorAll('.media-byline .contributor_content > :first-child'), function (n) { return n.textContent.trim(); }).filter(Boolean).join(', ');
     S.artwork = S.videoId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(S.videoId) + '/hqdefault.jpg' : null;
+    var ld = $('script[type="application/ld+json"]'), m = ld && /"duration"\s*:\s*"PT(\d+)S"/.exec(ld.textContent);
+    S.known = m ? Number(m[1]) : 0;
   }
   // A (new) stage element: the thumbnail behind the video, which is created on first use.
   function use(node) {
@@ -799,6 +804,8 @@
         if (v === null) d.documentElement.removeAttribute(n); else d.documentElement.setAttribute(n, v);
       });
       d.body.className = doc.body.className;
+      each(d.head.querySelectorAll('script[type="application/ld+json"]'), function (x) { x.parentNode.removeChild(x); });
+      each(doc.head.querySelectorAll('script[type="application/ld+json"]'), function (x) { d.head.appendChild(d.adoptNode(x)); });
       each(doc.querySelectorAll('link[rel="stylesheet"]'), function (l) {
         if (!$('link[rel="stylesheet"][href="' + l.getAttribute('href') + '"]')) d.head.appendChild(d.adoptNode(l));
       });
