@@ -539,7 +539,7 @@
       '.video-embed > [data-player="overlay"]{transition:opacity .35s ease,visibility .35s}',
       '.video-embed:not([data-player-mode="listen"]) > [data-player="overlay"]{opacity:0;visibility:hidden}',
       '.video-embed[data-player-mode="listen"] > iframe{opacity:0;visibility:hidden;pointer-events:none}',
-      '.video-embed[data-player-mode="listen"] > [data-player="poster"]{filter:brightness(.45)}',
+      '.video-embed[data-player-mode="listen"] > [data-player="poster"]{filter:brightness(.3)}',
       'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
       '.media-player_bar[data-state="blocked"] [data-player="expand"]{display:none}',
       '@media (min-width: 992px){.media-player_bar [data-player="expand"]{display:none}}',
