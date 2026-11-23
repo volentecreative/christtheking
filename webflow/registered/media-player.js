@@ -320,8 +320,10 @@
   function controlSet(parent, inStage) {
     var c = {};
     c.scrub = el('div', 'media-controls_scrub', { role: 'slider', tabindex: '0', 'aria-label': 'Position', 'aria-valuemin': '0' });
-    var track = el('div', 'media-controls_track');
-    track.appendChild(el('div', 'media-controls_fill')); track.appendChild(el('div', 'media-controls_thumb'));
+    var track = c.track = el('div', 'media-controls_track');
+    c.thumb = el('div', 'media-controls_thumb');
+    c.bubble = el('div', 'media-controls_bubble text-style-mono', { 'aria-hidden': 'true' }); // the time while dragging
+    [el('div', 'media-controls_fill'), c.thumb, c.bubble].forEach(function (n) { track.appendChild(n); });
     c.scrub.appendChild(track);
     var times = el('div', 'media-controls_times');
     c.elapsed = el('div', 'text-style-media-meta'); c.left = el('div', 'text-style-media-meta');
@@ -496,6 +498,12 @@
       c.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
       c.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
       c.elapsed.textContent = fmt(t);
+      if (c.scrub.classList.contains('is-scrubbing')) {
+        c.bubble.textContent = fmt(t);
+        var tw = c.track.offsetWidth, th = c.thumb.offsetWidth, bw = c.bubble.offsetWidth;
+        var mid = (tw - th) * (dur ? clamp(t / dur, 0, 1) : 0) + th / 2; // over the thumb, kept within the track
+        c.bubble.style.left = clamp(mid - bw / 2, 0, Math.max(0, tw - bw)) + 'px';
+      }
       c.left.textContent = dur ? '-' + fmt(dur - t) : '';
     });
     dr.title.textContent = S.title;
@@ -566,6 +574,8 @@
       '.media-controls_thumb{left:calc(var(--player-progress,0%) - var(--player-progress-n,0) * 1.25rem);transform:translateY(-50%);transition:transform .15s ease}',
       '.media-controls_scrub.is-scrubbing .media-controls_thumb,.media-controls_scrub:focus-visible .media-controls_thumb{transform:translateY(-50%) scale(1.3)}',
       '.media-controls_buttons svg.is-forward{transform:scaleX(-1)}',
+      '.media-controls_bubble{opacity:0;transform:translateY(.25rem);transition:opacity .15s ease,transform .15s ease}',
+      '.media-controls_scrub.is-scrubbing .media-controls_bubble{opacity:1;transform:none}',
       // Nothing at the bottom of the page sits under the docked bar.
       'body.has-player-dock .page-wrapper{padding-bottom:var(--player-dock-height,0px)}',
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
