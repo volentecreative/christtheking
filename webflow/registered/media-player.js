@@ -598,7 +598,12 @@
       '.media-player_title > span{display:inline-block;white-space:nowrap}',
       '.media-player_title.is-marquee > span{animation:ctk-marquee var(--marquee-time,10s) linear infinite}',
       '@keyframes ctk-marquee{0%,20%{transform:none}80%,100%{transform:translateX(var(--marquee-shift,0))}}',
-      '@media (prefers-reduced-motion: reduce){.media-player_title.is-marquee > span{animation:none}}',
+      // While scrolling, fade the left edge in once the text moves and the right edge out once the end shows.
+      '@property --fade-l{syntax:"<length-percentage>";inherits:false;initial-value:0%}',
+      '@property --fade-r{syntax:"<length-percentage>";inherits:false;initial-value:20%}',
+      '.media-player_title.is-marquee{-webkit-mask-image:linear-gradient(90deg,#0000,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),#0000);mask-image:linear-gradient(90deg,#0000,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),#0000);animation:ctk-marquee-fade var(--marquee-time,10s) linear infinite}',
+      '@keyframes ctk-marquee-fade{0%,20%{--fade-l:0%;--fade-r:20%}24%,76%{--fade-l:15%;--fade-r:20%}80%,100%{--fade-l:15%;--fade-r:0%}}',
+      '@media (prefers-reduced-motion: reduce){.media-player_title.is-marquee > span,.media-player_title.is-marquee{animation:none}}',
       '.media-controls_bubble{opacity:0;transform:translateY(.25rem);transition:opacity .15s ease,transform .15s ease}',
       '.media-controls_scrub.is-scrubbing .media-controls_bubble{opacity:1;transform:none}',
       // Nothing at the bottom of the page sits under the docked bar.
