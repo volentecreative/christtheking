@@ -330,7 +330,7 @@
     times.appendChild(c.elapsed); times.appendChild(c.left);
     var buttons = el('div', 'media-controls_buttons ' + (inStage ? 'is-overlay' : 'is-compact')); // compact: smaller with a mouse
     function skip(sec) {
-      var b = el('button', 'media-player_btn is-skip' + (inStage ? '' : ' is-compact'), { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds', 'vci-tooltip': '' });
+      var b = el('button', 'media-player_btn is-skip' + (inStage ? '' : ' is-compact'), { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds' });
       b.innerHTML = svg(ICON.replay, sec > 0 ? 'is-forward' : '') + '<span class="media-controls_skip-label" aria-hidden="true">' + Math.abs(sec) + '</span>';
       b.addEventListener('click', function () { api.seek(api.getTime() + sec); });
       return b;
