@@ -367,7 +367,7 @@
     // Continue listening: the site's primary button, shown only after a blocked hand-off.
     els.cont = el('a', 'button', { href: '#', role: 'button', 'data-player': 'continue', 'data-player-nav': 'off' });
     els.cont.innerHTML = '<div class="button-type">' + svg(ICON.listen, 'button-icon') + '<p class="text-button">Continue listening</p><div class="button-sheen"></div></div>';
-    // Phones open the drawer; desktop (and a blocked hand-off) can close the bar.
+    // The chevron opens the player; only a blocked hand-off shows the close button.
     els.expand = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Open player', 'data-player': 'expand', 'data-player-nav': 'off' });
     els.expand.innerHTML = svg(ICON.up);
     els.close = el('a', 'icon-button', { href: '#', role: 'button', 'aria-label': 'Close player', 'data-player': 'close', 'data-player-nav': 'off' });
@@ -422,6 +422,8 @@
     root.appendChild(drawer);
 
     scrim.addEventListener('click', closeDrawer);
+    // Desktop has no scrim to click: any click outside the player closes the card.
+    d.addEventListener('click', function (e) { if (!mobile.matches && !root.contains(e.target)) closeDrawer(); });
     dr.close.addEventListener('click', closeDrawer);
     // The thumbnail and the title lead back to the sermon's page.
     function toSermon(e) {
@@ -472,6 +474,7 @@
     dr.art.style.display = src ? '' : 'none';
     if (src && dr.art.getAttribute('src') !== src) dr.art.src = src;
     if (S.href) dr.head.href = S.href;
+    drawer.setAttribute('aria-modal', String(mobile.matches)); // desktop: a card, the page stays usable
     drawer.inert = false;
     drawer.classList.add('is-visible');
     d.documentElement.classList.add('has-player-drawer');
@@ -596,8 +599,7 @@
       '.video-embed[data-player-mode="listen"] > [data-player="poster"]{filter:brightness(.3)}',
       'button.media-player_btn{-webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;font:inherit}',
       '.media-player_bar[data-state="blocked"] [data-player="expand"]{display:none}',
-      '@media (min-width: 992px){.media-player_bar [data-player="expand"]{display:none}}',
-      '@media (max-width: 991px){.media-player_bar:not([data-state="blocked"]) [data-player="close"]{display:none}}',
+      '.media-player_bar:not([data-state="blocked"]) [data-player="close"]{display:none}',
       '.media-player_bar:not([data-state="blocked"]) [data-player="continue"],.media-player_bar[data-state="blocked"] [data-player="play"],.media-player_bar[data-state="blocked"] .media-player_time{display:none}',
       '.media-player_time > :empty{display:none}',
       '.media-player_progress > .media-player_progress-fill{position:absolute;left:0;top:50%;transform:translateY(-50%);width:var(--player-progress,0%);flex:none;margin:0}',
@@ -609,8 +611,8 @@
       '.media-drawer_panel{transform:translateY(100%);transition:transform .32s cubic-bezier(.22,1,.36,1);touch-action:none}',
       '.media-drawer.is-visible .media-drawer_panel{transform:translateY(var(--drawer-drag,0px))}',
       '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
-      '@media (min-width: 992px){.media-drawer_panel,.media-drawer.is-visible .media-drawer_panel{transform:none;overflow:hidden;transition:height .32s cubic-bezier(.22,1,.36,1)}.media-drawer_panel > *{opacity:0;transition:opacity .12s ease}.media-drawer.is-visible .media-drawer_panel > *{opacity:1;transition:opacity .2s ease .12s}html.has-player-drawer .media-player_bar{visibility:hidden}}',
       'html.has-player-drawer{overflow:hidden}',
+      '@media (min-width: 992px){.media-drawer_panel,.media-drawer.is-visible .media-drawer_panel{transform:none;overflow:hidden;transition:height .32s cubic-bezier(.22,1,.36,1)}.media-drawer_panel > *{opacity:0;transition:opacity .12s ease}.media-drawer.is-visible .media-drawer_panel > *{opacity:1;transition:opacity .2s ease .12s}html.has-player-drawer .media-player_bar{visibility:hidden}.media-drawer.is-visible{pointer-events:none}.media-drawer.is-visible .media-drawer_panel{pointer-events:auto}.media-drawer.is-visible .media-drawer_scrim{opacity:0}html.has-player-drawer{overflow:visible}}',
       '.media-controls_scrub{touch-action:none}',
       '.media-controls_fill{width:calc(var(--player-progress,0%) + (.5 - var(--player-progress-n,0)) * 1.25rem)}',
       '.media-controls_thumb{left:calc(var(--player-progress,0%) - var(--player-progress-n,0) * 1.25rem);transform:translateY(-50%);transition:transform .15s ease}',
