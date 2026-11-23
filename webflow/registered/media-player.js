@@ -403,7 +403,6 @@
     drawer = el('div', 'media-drawer', { 'data-player': 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Audio player' });
     var scrim = el('div', 'media-drawer_scrim');
     var panel = dr.panel = el('div', 'media-drawer_panel');
-    dr.art = el('img', 'media-drawer_art', { alt: '' });
     // Header as on the site's other drawers (filters, transcript): grab, title, close.
     var header = el('div', 'modal_header is-centered');
     header.innerHTML = '<div class="modal_title">' + svg(ICON.listen, 'button-icon') + '<h2 class="heading-style-h5">Now playing</h2></div>';
@@ -422,7 +421,7 @@
     dr.artist = el('div', 'text-style-media-meta');
     text.appendChild(dr.title); text.appendChild(dr.artist);
     head.appendChild(text);
-    [el('div', 'media-drawer_grab', { 'aria-hidden': 'true' }), header, dr.art, head].forEach(function (n) { panel.appendChild(n); });
+    [el('div', 'media-drawer_grab', { 'aria-hidden': 'true' }), header, head].forEach(function (n) { panel.appendChild(n); });
     dr.set = controlSet(panel, false);
     drawer.appendChild(scrim); drawer.appendChild(panel);
     drawer.inert = true;
@@ -432,13 +431,12 @@
     // Desktop has no scrim to click: any click outside the player closes the card.
     d.addEventListener('click', function (e) { if (!mobile.matches && !root.contains(e.target)) closeDrawer(); });
     dr.close.addEventListener('click', closeDrawer);
-    // The thumbnail and the title lead back to the sermon's page.
+    // The title leads back to the sermon's page.
     function toSermon(e) {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
       e.preventDefault();
       if (!dragged) { closeDrawer(); back(); }
     }
-    dr.art.addEventListener('click', toSermon);
     head.addEventListener('click', toSermon);
     drawer.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
     // Drag the sheet down to close it.
@@ -477,9 +475,6 @@
   function openDrawer() {
     if (drawer.classList.contains('is-visible') || S.mode !== 'listen') return;
     lastFocus = d.activeElement;
-    var src = poster ? poster.currentSrc || poster.src : S.artwork;
-    dr.art.style.display = src ? '' : 'none';
-    if (src && dr.art.getAttribute('src') !== src) dr.art.src = src;
     if (S.href) dr.head.href = S.href;
     drawer.setAttribute('aria-modal', String(mobile.matches)); // desktop: a card, the page stays usable
     drawer.inert = false;
