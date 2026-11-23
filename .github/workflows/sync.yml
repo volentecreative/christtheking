@@ -83,6 +83,20 @@ jobs:
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
         run: node sync-podcast.js ${{ inputs.dry_run && '--dry-run' || '' }} --report podcast-report.csv --verbose
 
+      # Whisper (Groq) for new items with audio but no transcript; fills empty
+      # transcripts only. continue-on-error so a Groq outage never fails the sync.
+      - name: Transcribe missing (Groq)
+        if: ${{ always() && !inputs.skip_podcast }}
+        continue-on-error: true
+        env:
+          WEBFLOW_API_TOKEN: ${{ secrets.WEBFLOW_API_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        # The runner image has no ffmpeg; install it only when something needs transcribing.
+        run: |
+          if node transcribe-missing.js --groq --dry-run | grep -q '^0 item'; then echo 'Nothing to transcribe.'; exit 0; fi
+          command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null; }
+          node transcribe-missing.js --groq --limit 5 ${{ inputs.dry_run && '--dry-run' || '' }}
+
       # Moves any Media thumbnail that isn't WebP onto YouTube's WebP file (~40%
       # of the bytes). New items already get WebP from the YouTube step; this
       # catches the rest. One Webflow list call when there's nothing to do.
