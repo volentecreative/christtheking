@@ -33,7 +33,6 @@
     pause: 'M560-200v-560h160v560H560Zm-320 0v-560h160v560H240Z',
     replay: 'M480-80q-75 0-140.5-28.5t-114-77q-48.5-48.5-77-114T120-440h80q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l62 62-56 58-160-160 160-160 56 58-62 62h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80Z',
     up: 'M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z',
-    down: 'M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z',
     close: 'm256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z',
     listen: 'M360-120H200q-33 0-56.5-23.5T120-200v-280q0-75 28.5-140.5t77-114q48.5-48.5 114-77T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480v280q0 33-23.5 56.5T760-120H600v-320h160v-40q0-117-81.5-198.5T480-760q-117 0-198.5 81.5T200-480v40h160v320Zm-80-240h-80v160h80v-160Zm400 0v160h80v-160h-80Zm-400 0h-80 80Zm400 0h80-80Z'
   };
@@ -352,6 +351,7 @@
     bar = el('div', 'media-player_bar', { 'data-player': 'bar' });
     els.info = el('div', 'media-player_info', { role: 'button', tabindex: '0' });
     els.title = el('div', 'text-style-title-small media-player_title');
+    els.title.appendChild(el('span'));
     els.time = el('div', 'media-player_time', { 'aria-hidden': 'true' });
     els.elapsed = el('div', 'text-style-media-meta');
     els.progress = el('div', 'media-player_progress');
@@ -402,14 +402,19 @@
     var scrim = el('div', 'media-drawer_scrim');
     var panel = el('div', 'media-drawer_panel');
     dr.art = el('img', 'media-drawer_art', { alt: '' });
+    // Header as on the site's other drawers (filters, transcript): grab, title, close.
+    var header = el('div', 'modal_header');
+    header.innerHTML = '<div class="modal_title">' + svg(ICON.listen, 'button-icon') + '<h2 class="heading-style-h5">Now playing</h2></div>';
+    dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Close player' });
+    dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" class="button-icon"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
+    header.appendChild(dr.close);
     var head = el('div', 'media-drawer_head'), text = el('div', 'media-drawer_text');
     dr.title = el('div', 'text-style-title-small media-player_title');
+    dr.title.appendChild(el('span'));
     dr.artist = el('div', 'text-style-media-meta');
-    dr.close = el('button', 'media-player_btn', { type: 'button', 'aria-label': 'Close' });
-    dr.close.innerHTML = svg(ICON.down);
     text.appendChild(dr.title); text.appendChild(dr.artist);
-    head.appendChild(text); head.appendChild(dr.close);
-    [el('div', 'media-drawer_grab', { 'aria-hidden': 'true' }), dr.art, head].forEach(function (n) { panel.appendChild(n); });
+    head.appendChild(text);
+    [el('div', 'media-drawer_grab', { 'aria-hidden': 'true' }), header, dr.art, head].forEach(function (n) { panel.appendChild(n); });
     dr.set = controlSet(panel, false);
     drawer.appendChild(scrim); drawer.appendChild(panel);
     drawer.inert = true;
@@ -476,6 +481,20 @@
     if (docked) d.documentElement.style.setProperty('--player-dock-height', bar.offsetHeight + 'px');
     else d.documentElement.style.removeProperty('--player-dock-height');
   }
+  // A title too long for its line scrolls while playing, as Spotify does.
+  function title(box, playing) {
+    var span = box.firstChild;
+    if (span.textContent !== S.title) span.textContent = S.title;
+    var key = S.title + '|' + playing + '|' + box.clientWidth;
+    if (box._key === key) return;
+    box._key = key;
+    var over = span.scrollWidth - box.clientWidth, run = playing && over > 4;
+    box.classList.toggle('is-marquee', run);
+    if (!run) return;
+    var shift = over + box.clientWidth * 0.2; // ends clear of the fade on the right
+    box.style.setProperty('--marquee-shift', -shift + 'px');
+    box.style.setProperty('--marquee-time', (shift / 30 / 0.6).toFixed(1) + 's'); // 30px/s over the moving 60%
+  }
   var scrubAt = null;
   function paint() {
     if (!bar) return;
@@ -485,7 +504,7 @@
     var pct = (dur ? clamp(t / dur, 0, 1) * 100 : 0).toFixed(2) + '%';
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     els.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
-    els.title.textContent = S.title;
+    title(els.title, playing);
     els.info.setAttribute('aria-label', S.title + (mobile.matches && S.mode === 'listen' ? ' — open player' : ' — back to the sermon'));
     els.elapsed.textContent = fmt(t);
     els.elapsed.style.minWidth = dur ? fmt(dur).length + 'ch' : '';
@@ -508,7 +527,7 @@
       }
       c.left.textContent = dur ? '-' + fmt(dur - t) : '';
     });
-    dr.title.textContent = S.title;
+    title(dr.title, playing);
     dr.artist.textContent = S.artist;
   }
   // pr takes the pointer and keys; the position is measured along track.
@@ -576,6 +595,10 @@
       '.media-controls_thumb{left:calc(var(--player-progress,0%) - var(--player-progress-n,0) * 1.25rem);transform:translateY(-50%);transition:transform .15s ease}',
       '.media-controls_scrub.is-scrubbing .media-controls_thumb,.media-controls_scrub:focus-visible .media-controls_thumb{transform:translateY(-50%) scale(1.3)}',
       '.media-controls_buttons svg.is-forward{transform:scaleX(-1)}',
+      '.media-player_title > span{display:inline-block;white-space:nowrap}',
+      '.media-player_title.is-marquee > span{animation:ctk-marquee var(--marquee-time,10s) linear infinite}',
+      '@keyframes ctk-marquee{0%,20%{transform:none}80%,100%{transform:translateX(var(--marquee-shift,0))}}',
+      '@media (prefers-reduced-motion: reduce){.media-player_title.is-marquee > span{animation:none}}',
       '.media-controls_bubble{opacity:0;transform:translateY(.25rem);transition:opacity .15s ease,transform .15s ease}',
       '.media-controls_scrub.is-scrubbing .media-controls_bubble{opacity:1;transform:none}',
       // Nothing at the bottom of the page sits under the docked bar.
