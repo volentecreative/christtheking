@@ -666,7 +666,9 @@
       '.media-controls_scrub.is-hovering .media-controls_thumb{transform:translateY(-50%) scale(1.15)}',
       '.media-controls_scrub{cursor:pointer}',
       // Nothing at the bottom of the page sits under the docked bar.
-      'body.has-player-dock .page-wrapper{padding-bottom:var(--player-dock-height,0px)}',
+      // Room under the docked bar, inside the footer so it takes the footer's colour.
+      'body.has-player-dock footer.footer{border-bottom:var(--player-dock-height,0px) solid transparent}',
+      'body.has-player-dock .page-wrapper:not(:has(footer.footer)){padding-bottom:var(--player-dock-height,0px)}',
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
       '.media-transcript.is-visible [data-transcript-sync]{bottom:calc(1rem + var(--player-dock-height,0px))}',
       '.media-transcript.is-visible .media-transcript_body{padding-bottom:calc(1.5rem + var(--player-dock-height,0px))}'
