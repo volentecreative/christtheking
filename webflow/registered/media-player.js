@@ -322,7 +322,8 @@
     var track = c.track = el('div', 'media-controls_track');
     c.thumb = el('div', 'media-controls_thumb');
     c.bubble = el('div', 'media-controls_bubble text-style-mono', { 'aria-hidden': 'true' }); // the time while dragging
-    [el('div', 'media-controls_fill'), c.thumb, c.bubble].forEach(function (n) { track.appendChild(n); });
+    c.preview = el('div', 'media-controls_preview'); // mouse hover: where a click would jump
+    [el('div', 'media-controls_fill'), c.preview, c.thumb, c.bubble].forEach(function (n) { track.appendChild(n); });
     c.scrub.appendChild(track);
     var times = el('div', 'media-controls_times');
     c.elapsed = el('div', 'text-style-media-meta'); c.left = el('div', 'text-style-media-meta');
@@ -342,7 +343,7 @@
     var timeline = el('div', 'media-controls_timeline'); // scrubber + times: one piece in both places
     timeline.appendChild(c.scrub); timeline.appendChild(times);
     (inStage ? [buttons, timeline] : [timeline, buttons]).forEach(function (n) { parent.appendChild(n); });
-    scrubbing(c.scrub, track);
+    scrubbing(c.scrub, track, c);
     sets.push(c);
     return c;
   }
@@ -543,26 +544,51 @@
       c.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
       c.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
       c.elapsed.textContent = fmt(t);
-      if (c.scrub.classList.contains('is-scrubbing')) {
-        c.bubble.textContent = fmt(t);
-        var tw = c.track.offsetWidth, th = c.thumb.offsetWidth, bw = c.bubble.offsetWidth;
-        var mid = (tw - th) * (dur ? clamp(t / dur, 0, 1) : 0) + th / 2; // over the thumb, kept within the track
-        c.bubble.style.left = clamp(mid - bw / 2, 0, Math.max(0, tw - bw)) + 'px';
-      }
+      if (c.scrub.classList.contains('is-scrubbing')) bubbleAt(c, dur ? clamp(t / dur, 0, 1) : 0, t);
+      else if (c.hoverAt != null) preview(c);
       c.left.textContent = dur ? '-' + fmt(dur - t) : '';
     });
     title(dr.title, playing);
     dr.artist.textContent = S.artist;
   }
   // pr takes the pointer and keys; the position is measured along track.
-  function scrubbing(pr, track) {
-    var thumb = track.querySelector('.media-controls_thumb');
+  // Positions along the thumb's travel, so the bar and bubble line up with where the thumb would sit.
+  function travel(c, f) { var tw = c.track.offsetWidth, th = c.thumb.offsetWidth; return (tw - th) * f + th / 2; }
+  function bubbleAt(c, f, t) {
+    c.bubble.textContent = fmt(t);
+    var bw = c.bubble.offsetWidth;
+    c.bubble.style.left = clamp(travel(c, f) - bw / 2, 0, Math.max(0, c.track.offsetWidth - bw)) + 'px';
+  }
+  function preview(c) {
+    var dur = api.getDuration(), now = dur ? clamp(api.getTime() / dur, 0, 1) : 0, h = c.hoverAt;
+    var a = travel(c, Math.min(now, h)), b = travel(c, Math.max(now, h));
+    c.preview.style.left = a + 'px';
+    c.preview.style.width = (b - a) + 'px';
+    c.preview.classList.toggle('is-back', h < now); // behind the playhead: dims the played part
+    bubbleAt(c, h, h * dur);
+  }
+  function scrubbing(pr, track, c) {
+    var thumb = track.querySelector('.media-controls_thumb'), hoverTimer = null;
     function at(e) { // along the thumb's travel, so it stays under the finger
       var r = track.getBoundingClientRect(), tw = thumb ? thumb.offsetWidth : 0;
       return r.width > tw ? clamp((e.clientX - r.left - tw / 2) / (r.width - tw), 0, 1) : 0;
     }
+    // A mouse over the track previews the jump: a bar from the playhead to the pointer and,
+    // after a beat, the time there. Hidden while dragging, when the bubble shows the drag.
+    function unhover() { clearTimeout(hoverTimer); c.hoverAt = null; pr.classList.remove('is-hovering', 'is-hover-time'); }
+    pr.addEventListener('pointermove', function (e) {
+      if (scrubAt !== null || e.pointerType === 'touch' || !api.getDuration()) return;
+      c.hoverAt = at(e);
+      if (!pr.classList.contains('is-hovering')) {
+        pr.classList.add('is-hovering');
+        hoverTimer = setTimeout(function () { pr.classList.add('is-hover-time'); }, 100);
+      }
+      preview(c);
+    });
+    pr.addEventListener('pointerleave', unhover);
     pr.addEventListener('pointerdown', function (e) {
       if (!api.getDuration()) return;
+      unhover();
       scrubAt = at(e);
       pr.classList.add('is-scrubbing');
       if (pr.setPointerCapture) pr.setPointerCapture(e.pointerId);
@@ -629,7 +655,10 @@
       '@keyframes ctk-marquee-fade{0%,20%{--fade-l:0%;--fade-r:20%}24%,76%{--fade-l:15%;--fade-r:20%}80%,100%{--fade-l:15%;--fade-r:0%}}',
       '@media (prefers-reduced-motion: reduce){.media-player_title.is-marquee > span,.media-player_title.is-marquee{animation:none}}',
       '.media-controls_bubble{opacity:0;transform:translateY(.25rem);transition:opacity .15s ease,transform .15s ease}',
-      '.media-controls_scrub.is-scrubbing .media-controls_bubble{opacity:1;transform:none}',
+      '.media-controls_scrub.is-scrubbing .media-controls_bubble,.media-controls_scrub.is-hover-time .media-controls_bubble{opacity:1;transform:none}',
+      '.media-controls_scrub:not(.is-hovering) .media-controls_preview{visibility:hidden}',
+      '.media-controls_scrub.is-hovering .media-controls_thumb{transform:translateY(-50%) scale(1.15)}',
+      '.media-controls_scrub{cursor:pointer}',
       // Nothing at the bottom of the page sits under the docked bar.
       'body.has-player-dock .page-wrapper{padding-bottom:var(--player-dock-height,0px)}',
       'body.has-player-dock .scroll-to-top_button{margin-bottom:calc(var(--player-dock-height,0px) + .5rem)}',
