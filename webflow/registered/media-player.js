@@ -407,8 +407,14 @@
     // Header as on the site's other drawers (filters, transcript): grab, title, close.
     var header = el('div', 'modal_header is-centered');
     header.innerHTML = '<div class="modal_title">' + svg(ICON.listen, 'button-icon') + '<h2 class="heading-style-h5">Now playing</h2></div>';
-    dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Close player', 'vci-tooltip': '' });
-    dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" class="button-icon"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
+    // It collapses the player (the audio keeps playing): a chevron down on desktop, where the
+    // card folds back into the bar; the site's sheet × on phones.
+    dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Collapse player', 'vci-tooltip': '' });
+    function closeIcon() {
+      dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="button-icon"><path d="' + (mobile.matches ? 'M18 6 6 18M6 6l12 12' : 'm6 9 6 6 6-6') + '"></path></svg>';
+    }
+    closeIcon();
+    if (mobile.addEventListener) mobile.addEventListener('change', closeIcon); else if (mobile.addListener) mobile.addListener(closeIcon);
     header.appendChild(dr.close);
     var head = dr.head = el('a', 'media-drawer_head', { href: '#', 'data-player-nav': 'off' }), text = el('div', 'media-drawer_text');
     dr.title = el('div', 'text-style-title-small media-player_title');
