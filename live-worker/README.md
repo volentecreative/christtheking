@@ -7,6 +7,9 @@ live right now.
 
 Live at **https://livestream.christtheking.build**
 
+Where this is heading (Cloudflare recording → Google Drive, dashboard, email
+alerts, fallbacks): see [ROADMAP.md](ROADMAP.md).
+
 | Path | Returns |
 |---|---|
 | `/` | 302 to the live stream, else the channel's Videos tab |
