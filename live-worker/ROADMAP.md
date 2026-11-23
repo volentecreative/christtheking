@@ -35,7 +35,7 @@ needs both.
 
 ```
                 ┌───────────────────────── normal path ─────────────────────────┐
-ATEM Mini ──RTMPS/SRT──▶ Cloudflare Stream live input ──simulcast──▶ YouTube (unlisted)
+ATEM SDI Pro ISO ──SRT──▶ Cloudflare Stream live input ──simulcast──▶ YouTube (unlisted)
    │                         │                                         │
    │ USB recording           │ recording ready (webhook)               │ Data API
    ▼ (local backup)          ▼                                         ▼
@@ -96,7 +96,7 @@ register resolver 2.5.0 in Webflow in place of 2.4.0 and publish.
 - Cloudflare Stream live input with recording on, plus one live output
   (simulcast) to YouTube's RTMP URL and stream key.
 - Webhook endpoint in the Worker, signature-checked.
-- Google Drive upload with the church's Google account (one-time sign-in,
+- Google Drive upload as mediamen@christtheking.build (one-time sign-in,
   scope limited to the files the app creates, `drive.file`). The refresh token
   lives in KV next to the YouTube one.
 - Retries with backoff; a recording stays in Cloudflare until it's confirmed in
@@ -106,9 +106,20 @@ register resolver 2.5.0 in Webflow in place of 2.4.0 and publish.
 
 **Open questions**
 
-- ATEM model and firmware: needed to confirm it can stream to Cloudflare
-  (RTMPS or SRT) and to write the switch-over steps.
-- Which Drive folder (and which Google account owns it).
+- ~~ATEM model~~: **ATEM SDI Pro ISO** (confirmed 2026-11-23). Blackmagic's
+  9.5 switcher update added SRT streaming to it, and Cloudflare Stream accepts
+  SRT, so it can feed Cloudflare directly. Update both the switcher firmware and
+  ATEM Software Control to the latest 9.x (some guides say 9.6+ for SRT) and
+  check the installed version before the first test. Being an ISO model, its
+  USB recording also keeps each camera input as a separate file, which helps
+  if a sermon ever needs re-editing from the raw angles.
+- ~~Which Drive~~: **the mediamen@christtheking.build Google Drive** (confirmed
+  2026-11-23). With the narrow `drive.file` scope the app can only write to
+  folders it created itself, so on the first run it **creates its own folder**
+  ("Livestream recordings") in that Drive. People can rename it, move it, or
+  share it from Drive afterwards and uploads keep landing in it. Writing into
+  an existing folder instead would need the full `drive` scope (access to
+  everything in that Drive); not worth it.
 - Does Cloudflare's download link for large recordings stream cleanly through a
   Worker into Drive within Worker limits? Prototype this first; if not, use a
   Cloudflare Queue consumer or Workflow to do the copy in steps.
@@ -230,11 +241,11 @@ same stream key at once. The switch-over is either/or.
 | Deploy the Worker (`npx wrangler deploy`), set secrets | Someone with the CTK Cloudflare login | 0+ |
 | Register resolver 2.5.0 in Webflow and publish | Josh (or Claude via the Webflow connection) | 0 |
 | Turn on Auto-stop in YouTube Studio | Media team | 0 |
-| ATEM model + firmware version | Media team | 1 |
+| Update ATEM SDI Pro ISO firmware + ATEM Software Control to latest 9.x (SRT needs 9.5+) | Media team | 1 |
 | Turn on Cloudflare Stream (about $5/month) | CTK Cloudflare account owner | 1 |
 | YouTube stream key into the Cloudflare live output | Media team | 1 |
 | ATEM: save the Cloudflare destination and keep YouTube direct as a second one; USB recording on | Media team | 1 |
-| Choose the Drive folder; one-time Google sign-in for Drive | Josh / media team | 1 |
+| One-time Google sign-in for Drive as mediamen@christtheking.build | Media team | 1 |
 | Add the dashboard's redirect URL and `openid email` scopes to the "CTK Live" Google project | Google Cloud project owner | 2 |
 | `ADMIN_SEED` secret (first admins) | Josh | 2 |
 | Email Routing on a `notify.` subdomain; API token for adding destination addresses | CTK Cloudflare account owner | 3 |
