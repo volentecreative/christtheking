@@ -10,7 +10,7 @@
  *         and the stage is off screen, the bar (media-player_bar) docks to the bottom
  *         (.is-visible). Same-site links then load in place so the audio carries on; when it
  *         ends, the next part in the series ([data-series-next]) loads and plays.
- * Drawer  on phones, the docked bar opens a sheet (.media-drawer) with the same controls.
+ * Drawer  in listen mode, a click on the docked bar opens the player (.media-drawer) with the same controls: a sheet on phones, a card over the bar on desktop.
  * Mode    cookie ctk-playback-mode (watch|listen), written only by a tap on the switch.
  * Mobile  ≤991px (the site's tablet breakpoint, as the transcript sheet): a playing video that
  *         scrolls fully off screen hands over to the audio once. If the browser blocks audio
@@ -314,7 +314,7 @@
   var sets = [], overlay = null; // full control sets (stage overlay, drawer), painted together
   function key(fn) { return function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } }; }
   function back() { if (stage) stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); else if (S.href) nav.go(S.href, true); }
-  function openOrBack() { if (mobile.matches && S.mode === 'listen') openDrawer(); else back(); }
+  function openOrBack() { if (S.mode === 'listen') openDrawer(); else back(); }
   // A large scrubber with times and −15 / play / +15. In the stage the buttons sit above.
   function controlSet(parent, inStage) {
     var c = {};
@@ -388,7 +388,8 @@
       x[0].addEventListener('keydown', key(x[1]));
     });
     els.play.addEventListener('click', function () { api.toggle(); });
-    els.info.addEventListener('click', openOrBack);
+    // The whole bar opens the player; only its buttons do something else.
+    bar.addEventListener('click', function (e) { if (!e.target.closest('button, a')) openOrBack(); });
     els.info.addEventListener('keydown', function (e) { if (e.target === els.info) key(openOrBack)(e); });
 
     overlay = el('div', 'media-player_overlay', { 'data-player': 'overlay' });
@@ -396,7 +397,7 @@
     buildDrawer();
   }
 
-  /* ---------- the drawer (phones) ---------- */
+  /* ---------- the drawer: a sheet on phones, a card over the bar on desktop ---------- */
   function buildDrawer() {
     drawer = el('div', 'media-drawer', { 'data-player': 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Audio player' });
     var scrim = el('div', 'media-drawer_scrim');
@@ -505,7 +506,7 @@
     els.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     els.playPath.setAttribute('d', playing ? ICON.pause : ICON.play);
     title(els.title, playing);
-    els.info.setAttribute('aria-label', S.title + (mobile.matches && S.mode === 'listen' ? ' — open player' : ' — back to the sermon'));
+    els.info.setAttribute('aria-label', S.title + (S.mode === 'listen' ? ' — open player' : ' — back to the sermon'));
     els.elapsed.textContent = fmt(t);
     els.elapsed.style.minWidth = dur ? fmt(dur).length + 'ch' : '';
     els.duration.textContent = dur ? fmt(dur) : '';
@@ -589,6 +590,7 @@
       '.media-drawer_panel{transform:translateY(100%);transition:transform .32s cubic-bezier(.22,1,.36,1);touch-action:none}',
       '.media-drawer.is-visible .media-drawer_panel{transform:translateY(var(--drawer-drag,0px))}',
       '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
+      '@media (min-width: 992px){.media-drawer_panel{transform:translateY(calc(100% + 2rem))}}',
       'html.has-player-drawer{overflow:hidden}',
       '.media-controls_scrub{touch-action:none}',
       '.media-controls_fill{width:calc(var(--player-progress,0%) + (.5 - var(--player-progress-n,0)) * 1.25rem)}',
