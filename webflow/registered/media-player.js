@@ -204,6 +204,7 @@
     if (!$('script[src*="youtube.com/iframe_api"]')) d.head.appendChild(el('script', null, { src: 'https://www.youtube.com/iframe_api' }));
   }
   function onVideo(e) {
+    if (e.data === YT_BUFFERING && S.mode !== 'watch') { yt.pauseVideo(); return; }
     if (e.data === YT_PLAYING) {
       if (S.holdVideo > Date.now()) { S.holdVideo = 0; yt.pauseVideo(); return; }
       if (S.mode !== 'watch') { yt.pauseVideo(); return; }
