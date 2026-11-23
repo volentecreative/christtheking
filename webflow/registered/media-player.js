@@ -764,6 +764,7 @@
   }
   // After an in-place swap: the same sermon re-anchors, another one loads, no stage docks the bar.
   function adopt() {
+    dropMockups(); // every page brings the Designer mockup again
     var el = findStage();
     if (!el) { stage = null; observe(); place(); return; }
     var src = read(el);
@@ -905,10 +906,11 @@
   })();
 
   /* ---------- start ---------- */
+  function dropMockups() { Array.prototype.forEach.call(d.querySelectorAll('[data-player-mockup]'), function (m) { m.parentNode.removeChild(m); }); }
   function init() {
     var el = findStage();
     if (!el || root) return !!root;
-    Array.prototype.forEach.call(d.querySelectorAll('[data-player-mockup]'), function (m) { m.parentNode.removeChild(m); });
+    dropMockups();
     css();
     build();
     nav.start();
