@@ -327,14 +327,14 @@
     var times = el('div', 'media-controls_times');
     c.elapsed = el('div', 'text-style-media-meta'); c.left = el('div', 'text-style-media-meta');
     times.appendChild(c.elapsed); times.appendChild(c.left);
-    var buttons = el('div', 'media-controls_buttons' + (inStage ? ' is-overlay' : ''));
+    var buttons = el('div', 'media-controls_buttons ' + (inStage ? 'is-overlay' : 'is-compact')); // compact: smaller with a mouse
     function skip(sec) {
-      var b = el('button', 'media-player_btn is-skip', { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds' });
+      var b = el('button', 'media-player_btn is-skip' + (inStage ? '' : ' is-compact'), { type: 'button', 'aria-label': (sec < 0 ? 'Back ' : 'Forward ') + Math.abs(sec) + ' seconds' });
       b.innerHTML = svg(ICON.replay, sec > 0 ? 'is-forward' : '') + '<span class="media-controls_skip-label" aria-hidden="true">' + Math.abs(sec) + '</span>';
       b.addEventListener('click', function () { api.seek(api.getTime() + sec); });
       return b;
     }
-    c.play = el('button', 'media-player_btn is-play is-large', { type: 'button' });
+    c.play = el('button', 'media-player_btn is-play ' + (inStage ? 'is-large' : 'is-compact'), { type: 'button' });
     c.play.innerHTML = svg(ICON.play);
     c.playPath = c.play.querySelector('path');
     c.play.addEventListener('click', function () { api.toggle(); });
@@ -401,7 +401,7 @@
   function buildDrawer() {
     drawer = el('div', 'media-drawer', { 'data-player': 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Audio player' });
     var scrim = el('div', 'media-drawer_scrim');
-    var panel = el('div', 'media-drawer_panel');
+    var panel = dr.panel = el('div', 'media-drawer_panel');
     dr.art = el('img', 'media-drawer_art', { alt: '' });
     // Header as on the site's other drawers (filters, transcript): grab, title, close.
     var header = el('div', 'modal_header');
@@ -409,7 +409,7 @@
     dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Close player' });
     dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" class="button-icon"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
     header.appendChild(dr.close);
-    var head = el('div', 'media-drawer_head'), text = el('div', 'media-drawer_text');
+    var head = dr.head = el('a', 'media-drawer_head', { href: '#', 'data-player-nav': 'off' }), text = el('div', 'media-drawer_text');
     dr.title = el('div', 'text-style-title-small media-player_title');
     dr.title.appendChild(el('span'));
     dr.artist = el('div', 'text-style-media-meta');
@@ -423,7 +423,14 @@
 
     scrim.addEventListener('click', closeDrawer);
     dr.close.addEventListener('click', closeDrawer);
-    dr.art.addEventListener('click', function () { if (!dragged) { closeDrawer(); back(); } });
+    // The thumbnail and the title lead back to the sermon's page.
+    function toSermon(e) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      e.preventDefault();
+      if (!dragged) { closeDrawer(); back(); }
+    }
+    dr.art.addEventListener('click', toSermon);
+    head.addEventListener('click', toSermon);
     drawer.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
     // Drag the sheet down to close it.
     var y0 = null, dy = 0, dragged = false;
@@ -448,21 +455,33 @@
     panel.addEventListener('pointerup', release);
     panel.addEventListener('pointercancel', release);
   }
-  var lastFocus = null;
+  var lastFocus = null, morphTimer = null;
+  // Animate the card's height between the bar's and its own, so the bar seems to expand.
+  function morph(from, to) {
+    var p = dr.panel;
+    clearTimeout(morphTimer);
+    p.style.height = from + 'px';
+    void p.offsetHeight;
+    p.style.height = to + 'px';
+    morphTimer = setTimeout(function () { p.style.height = ''; }, 340);
+  }
   function openDrawer() {
     if (drawer.classList.contains('is-visible') || S.mode !== 'listen') return;
     lastFocus = d.activeElement;
     var src = poster ? poster.currentSrc || poster.src : S.artwork;
     dr.art.style.display = src ? '' : 'none';
     if (src && dr.art.getAttribute('src') !== src) dr.art.src = src;
+    if (S.href) dr.head.href = S.href;
     drawer.inert = false;
     drawer.classList.add('is-visible');
     d.documentElement.classList.add('has-player-drawer');
     paint();
+    if (!mobile.matches) morph(bar.offsetHeight, dr.panel.offsetHeight);
     dr.set.play.focus({ preventScroll: true });
   }
   function closeDrawer() {
     if (!drawer || !drawer.classList.contains('is-visible')) return;
+    if (!mobile.matches) morph(dr.panel.offsetHeight, bar.offsetHeight);
     drawer.classList.remove('is-visible');
     drawer.inert = true;
     d.documentElement.classList.remove('has-player-drawer');
@@ -590,7 +609,7 @@
       '.media-drawer_panel{transform:translateY(100%);transition:transform .32s cubic-bezier(.22,1,.36,1);touch-action:none}',
       '.media-drawer.is-visible .media-drawer_panel{transform:translateY(var(--drawer-drag,0px))}',
       '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
-      '@media (min-width: 992px){.media-drawer_panel{transform:translateY(calc(100% + 2rem))}}',
+      '@media (min-width: 992px){.media-drawer_panel,.media-drawer.is-visible .media-drawer_panel{transform:none;overflow:hidden;transition:height .32s cubic-bezier(.22,1,.36,1)}.media-drawer_panel > *{opacity:0;transition:opacity .12s ease}.media-drawer.is-visible .media-drawer_panel > *{opacity:1;transition:opacity .2s ease .12s}html.has-player-drawer .media-player_bar{visibility:hidden}}',
       'html.has-player-drawer{overflow:hidden}',
       '.media-controls_scrub{touch-action:none}',
       '.media-controls_fill{width:calc(var(--player-progress,0%) + (.5 - var(--player-progress-n,0)) * 1.25rem)}',
