@@ -489,6 +489,7 @@
     els.progress.style.setProperty('--player-progress', pct);
     sets.forEach(function (c) {
       c.scrub.style.setProperty('--player-progress', pct);
+      c.scrub.style.setProperty('--player-progress-n', (dur ? clamp(t / dur, 0, 1) : 0).toFixed(4));
       c.scrub.setAttribute('aria-valuemax', String(Math.round(dur)));
       c.scrub.setAttribute('aria-valuenow', String(Math.round(t)));
       c.scrub.setAttribute('aria-valuetext', fmt(t) + (dur ? ' of ' + fmt(dur) : ''));
@@ -502,7 +503,11 @@
   }
   // pr takes the pointer and keys; the position is measured along track.
   function scrubbing(pr, track) {
-    function at(e) { var r = track.getBoundingClientRect(); return r.width ? clamp((e.clientX - r.left) / r.width, 0, 1) : 0; }
+    var thumb = track.querySelector('.media-controls_thumb');
+    function at(e) { // along the thumb's travel, so it stays under the finger
+      var r = track.getBoundingClientRect(), tw = thumb ? thumb.offsetWidth : 0;
+      return r.width > tw ? clamp((e.clientX - r.left - tw / 2) / (r.width - tw), 0, 1) : 0;
+    }
     pr.addEventListener('pointerdown', function (e) {
       if (!api.getDuration()) return;
       scrubAt = at(e);
@@ -557,9 +562,9 @@
       '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
       'html.has-player-drawer{overflow:hidden}',
       '.media-controls_scrub{touch-action:none}',
-      '.media-controls_fill{width:var(--player-progress,0%)}',
-      '.media-controls_thumb{left:var(--player-progress,0%);transform:translate(-50%,-50%);transition:transform .15s ease}',
-      '.media-controls_scrub.is-scrubbing .media-controls_thumb,.media-controls_scrub:focus-visible .media-controls_thumb{transform:translate(-50%,-50%) scale(1.3)}',
+      '.media-controls_fill{width:calc(var(--player-progress,0%) + (.5 - var(--player-progress-n,0)) * 1.25rem)}',
+      '.media-controls_thumb{left:calc(var(--player-progress,0%) - var(--player-progress-n,0) * 1.25rem);transform:translateY(-50%);transition:transform .15s ease}',
+      '.media-controls_scrub.is-scrubbing .media-controls_thumb,.media-controls_scrub:focus-visible .media-controls_thumb{transform:translateY(-50%) scale(1.3)}',
       '.media-controls_buttons svg.is-forward{transform:scaleX(-1)}',
       // Nothing at the bottom of the page sits under the docked bar.
       'body.has-player-dock .page-wrapper{padding-bottom:var(--player-dock-height,0px)}',
