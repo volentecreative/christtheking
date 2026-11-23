@@ -47,8 +47,8 @@
     onStage: true,     // any of the stage is on screen
     handoff: 'idle',   // idle · trying · blocked (Continue listening shown) · spent · done
     unlocked: false, unlocking: false,
-    holdVideo: 0,      // until this time, pause a PLAYING (seekTo starts an unstarted player)
-    pendingSeek: null, // audio seconds to apply once metadata loads
+    videoAt: null,     // start time cued into a video that has not played yet
+    pendingSeek: null, seekTries: 0, // audio seconds not yet reached by playing audio
     resumed: false, autoplay: false, lastTime: 0
   };
   var stage = null, modes = null, root, bar, els = {}, audio = null, io = null, drawer = null, dr = {};
@@ -118,11 +118,10 @@
         savePos(); paint(); emit('pause');
       });
       audio.addEventListener('ended', ended);
-      audio.addEventListener('loadedmetadata', function () {
-        if (S.pendingSeek !== null) { audio.currentTime = clampAudio(S.pendingSeek); S.pendingSeek = null; }
-        paint();
-      });
+      ['loadedmetadata', 'canplay', 'playing', 'seeked'].forEach(function (ev) { audio.addEventListener(ev, applySeek); });
+      audio.addEventListener('loadedmetadata', paint);
       audio.addEventListener('timeupdate', function () {
+        applySeek();
         if (S.mode !== 'listen') return;
         paint(); positionState();
         if (Math.floor(audio.currentTime) % 5 === 0) savePos();
@@ -135,10 +134,19 @@
     var dur = audio && audio.duration;
     return dur > 1 && isFinite(dur) ? clamp(x, 0, dur - 1) : Math.max(0, x);
   }
-  // Seek on the video's clock; before metadata the seek waits for it.
+  // Seek on the video's clock. iOS can drop a seek made before playback starts, so it stays
+  // pending (and is re-applied) until playing audio has reached it.
   function seekAudio(t) {
-    var a = ensureAudio(), target = t + S.offset;
-    if (a.readyState >= 1) a.currentTime = clampAudio(target); else S.pendingSeek = target;
+    ensureAudio();
+    S.pendingSeek = t + S.offset; S.seekTries = 0;
+    applySeek();
+  }
+  function applySeek() {
+    if (S.pendingSeek === null || !audio || audio.readyState < 1) return;
+    var target = clampAudio(S.pendingSeek);
+    if (Math.abs(audio.currentTime - target) < 1.5) { if (!audio.paused && audio.readyState >= 3) S.pendingSeek = null; return; }
+    if (++S.seekTries > 40) { S.pendingSeek = null; return; }
+    try { audio.currentTime = target; } catch (e) { /* not seekable yet */ }
   }
   function startAudio() {
     var p = ensureAudio().play();
@@ -170,6 +178,7 @@
     return s === YT_PLAYING || s === YT_BUFFERING;
   }
   function ytTime() {
+    if (S.videoAt !== null) return S.videoAt;
     if (ytReady && yt.getCurrentTime) { var t = yt.getCurrentTime(); if (t >= 0) S.lastTime = t; }
     return S.lastTime;
   }
@@ -206,7 +215,7 @@
   function onVideo(e) {
     if (e.data === YT_BUFFERING && S.mode !== 'watch') { yt.pauseVideo(); return; }
     if (e.data === YT_PLAYING) {
-      if (S.holdVideo > Date.now()) { S.holdVideo = 0; yt.pauseVideo(); return; }
+      S.videoAt = null;
       if (S.mode !== 'watch') { yt.pauseVideo(); return; }
       S.played = true;
       if (audio && !audio.paused && S.handoff !== 'trying') audio.pause();
@@ -223,9 +232,17 @@
   function seekVideo(t, play) {
     withVideo(function () {
       var s = yt.getPlayerState ? yt.getPlayerState() : -1;
-      S.holdVideo = !play && (s === -1 || s === 5) ? Date.now() + 2000 : 0; // unstarted or cued
-      yt.seekTo(Math.min(t, ytDuration() ? ytDuration() - 1 : t), true);
-      if (play) yt.playVideo();
+      t = Math.min(t, ytDuration() ? ytDuration() - 1 : t);
+      S.lastTime = t;
+      // A video that has never played (always the case on iOS until its own play button is
+      // tapped) ignores seekTo; loading it with a start time sticks, even if iOS blocks the play.
+      if (s === -1 || s === 5) {
+        S.videoAt = t;
+        yt[play ? 'loadVideoById' : 'cueVideoById']({ videoId: S.videoId, startSeconds: t });
+      } else {
+        yt.seekTo(t, true);
+        if (play) yt.playVideo();
+      }
     });
   }
 
@@ -234,7 +251,7 @@
   function show(mode) {
     S.mode = mode;
     if (stage) stage.setAttribute('data-player-mode', mode);
-    if (mode === 'listen') { S.holdVideo = 0; if (ytPlaying()) yt.pauseVideo(); }
+    if (mode === 'listen') { if (ytPlaying()) yt.pauseVideo(); }
     else { if (audio && !audio.paused) audio.pause(); closeDrawer(); }
     if (modes) Array.prototype.forEach.call(modes.querySelectorAll('[data-player-mode]'), function (b) {
       var on = b.getAttribute('data-player-mode') === mode;
@@ -250,6 +267,7 @@
     if (how === 'user') saveMode(mode);
     if (mode === S.mode) return;
     var t = api.getTime(), playing = api.isPlaying();
+    S.resumed = true; // the switch carries the position; no jump to a remembered one
     // A hand-off happens once per sermon; choosing Watch again also ends it.
     S.handoff = how === 'continue' || mode === 'watch' ? 'done' : 'idle';
     if (mode === 'listen') {
@@ -590,7 +608,7 @@
         var t = resumeAt();
         if (t) seekAudio(t);
         startAudio();
-      } else withVideo(function () { S.holdVideo = 0; yt.playVideo(); });
+      } else withVideo(function () { yt.playVideo(); });
     },
     pause: function () {
       if (S.mode === 'listen') { if (audio) audio.pause(); } else if (ytReady) yt.pauseVideo();
@@ -671,7 +689,7 @@
     use(el);
     S.slug = location.pathname.replace(/\/+$/, '').split('/').pop();
     S.href = location.pathname + location.search;
-    S.played = S.started = false; S.dismissed = false; S.handoff = 'idle'; S.holdVideo = 0;
+    S.played = S.started = false; S.dismissed = false; S.handoff = 'idle'; S.videoAt = null;
     S.pendingSeek = null; S.resumed = false; S.lastTime = 0;
     api.hasVideo = !!S.videoId; api.hasAudio = !!S.audioUrl;
     readPage();
