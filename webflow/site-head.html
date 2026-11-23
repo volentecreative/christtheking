@@ -202,13 +202,8 @@ document.addEventListener('touchstart', function () {}, { passive: true });
 
 <!-- ===========================================================
      AUDIT FIXES 2026-11-20 (Claude, approved by Josh)
-       1. Empty transcript: hide the transcript panel (desktop sidebar /
-          phone drawer) and its preview box when the item has no
-          transcript yet. Why custom code: visibility can only bind to a
-          Switch field through the API, and Webflow marks an empty bound
-          Rich Text with .w-dyn-bind-empty, which only a :has() selector
-          can see from the panel. Transcripts arrive later (YouTube
-          blocks captions from CI), so the panel comes back by itself.
+       1. (Removed 2026-11-23: an empty transcript now shows the panel
+          with its "No transcript available." notice instead of hiding.)
        2. Checkboxes (Connect form, Media/Study Tools filter dropdowns):
           the unchecked box was the browser's white default on the dark
           inputs. appearance:none and the ::before check mark can't be
@@ -217,10 +212,6 @@ document.addEventListener('touchstart', function () {}, { passive: true });
           pills (.is-pills) are hidden inputs and are left alone.
      =========================================================== -->
 <style>
-.media-content_wrap:has([data-transcript].w-dyn-bind-empty) :is(.media-secondary, [data-transcript-preview]) {
-  display: none !important;
-}
-
 .form_checkbox-input,
 .media-filters_checkbox:not(.is-pills) {
   -webkit-appearance: none;
