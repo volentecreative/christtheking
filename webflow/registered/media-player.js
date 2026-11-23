@@ -404,7 +404,7 @@
     var panel = dr.panel = el('div', 'media-drawer_panel');
     dr.art = el('img', 'media-drawer_art', { alt: '' });
     // Header as on the site's other drawers (filters, transcript): grab, title, close.
-    var header = el('div', 'modal_header');
+    var header = el('div', 'modal_header is-centered');
     header.innerHTML = '<div class="modal_title">' + svg(ICON.listen, 'button-icon') + '<h2 class="heading-style-h5">Now playing</h2></div>';
     dr.close = el('button', 'modal_close', { type: 'button', 'aria-label': 'Close player' });
     dr.close.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" class="button-icon"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
@@ -612,7 +612,7 @@
       '.media-drawer.is-visible .media-drawer_panel{transform:translateY(var(--drawer-drag,0px))}',
       '.media-drawer.is-dragging .media-drawer_panel{transition:none}',
       'html.has-player-drawer{overflow:hidden}',
-      '@media (min-width: 992px){.media-drawer_panel,.media-drawer.is-visible .media-drawer_panel{transform:none;overflow:hidden;transition:height .32s cubic-bezier(.22,1,.36,1)}.media-drawer_panel > *{opacity:0;transition:opacity .12s ease}.media-drawer.is-visible .media-drawer_panel > *{opacity:1;transition:opacity .2s ease .12s}html.has-player-drawer .media-player_bar{visibility:hidden}.media-drawer.is-visible{pointer-events:none}.media-drawer.is-visible .media-drawer_panel{pointer-events:auto}.media-drawer.is-visible .media-drawer_scrim{opacity:0}html.has-player-drawer{overflow:visible}}',
+      '@media (min-width: 992px){.media-drawer_panel,.media-drawer.is-visible .media-drawer_panel{transform:none;overflow:hidden;transition:height .32s cubic-bezier(.22,1,.36,1),border-radius .32s cubic-bezier(.22,1,.36,1)}.media-drawer.is-visible .media-drawer_panel{border-radius:var(--border-radius-medium,1rem)}.media-drawer_panel > *{opacity:0;transition:opacity .12s ease}.media-drawer.is-visible .media-drawer_panel > *{opacity:1;transition:opacity .2s ease .12s}html.has-player-drawer .media-player_bar{visibility:hidden}.media-drawer.is-visible{pointer-events:none}.media-drawer.is-visible .media-drawer_panel{pointer-events:auto}.media-drawer.is-visible .media-drawer_scrim{opacity:0}html.has-player-drawer{overflow:visible}}',
       '.media-controls_scrub{touch-action:none}',
       '.media-controls_fill{width:calc(var(--player-progress,0%) + (.5 - var(--player-progress-n,0)) * 1.25rem)}',
       '.media-controls_thumb{left:calc(var(--player-progress,0%) - var(--player-progress-n,0) * 1.25rem);transform:translateY(-50%);transition:transform .15s ease}',
